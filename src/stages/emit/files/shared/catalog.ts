@@ -1,55 +1,41 @@
 import { unwrapLiteral } from "@varavel/vdl-plugin-sdk/utils/ir";
 import { indent } from "@varavel/vdl-plugin-sdk/utils/strings";
-import type {
-  GeneratorContext,
-  OperationDescriptor,
-} from "../../../model/types";
+import { toLowerFirst } from "../../../../shared/naming";
+import type { GeneratorContext, ProcDescriptor } from "../../../model/types";
 
 /**
  * Returns runtime catalog metadata embedded into generated client and server files.
  */
 export function renderCatalogSource(context: GeneratorContext): string {
-  const procedures = context.procedures
-    .map((operation) => `${renderOperationDefinitionLiteral(operation)},`)
-    .join("\n");
-
-  const streams = context.streams
-    .map((operation) => `${renderOperationDefinitionLiteral(operation)},`)
+  const procs = context.procs
+    .map((proc) => `${renderProcDefinitionLiteral(proc)},`)
     .join("\n");
 
   const paths = context.services
     .map((service) => {
-      const operations = service.operations
+      const entries = service.procs
         .map(
-          (operation) =>
-            `    ${operation.name}: ${JSON.stringify(`/${operation.rpcName}/${operation.name}`)},`,
+          (proc) =>
+            `    ${proc.name}: ${JSON.stringify(`/${toLowerFirst(proc.rpcName)}/${proc.name}`)},`,
         )
         .join("\n");
 
-      return [`  ${service.name}: {`, operations, "  },"].join("\n");
+      return [`  ${service.name}: {`, entries, "  },"].join("\n");
     })
     .join("\n");
 
   return [
     "/**",
-    " * VDLProcedures lists every generated procedure definition with preserved schema metadata.",
+    " * VDLProcs lists every generated procedure definition with preserved schema metadata.",
     " * Use it for introspection, tracing, and building operation-aware tooling.",
     " */",
-    "export const VDLProcedures: OperationDefinition[] = [",
-    procedures,
+    "export const VDLProcs: ProcDefinition[] = [",
+    procs,
     "] as const;",
     "",
     "/**",
-    " * VDLStreams lists every generated stream definition with preserved schema metadata.",
-    " * Use it for introspection, tracing, and building operation-aware tooling.",
-    " */",
-    "export const VDLStreams: OperationDefinition[] = [",
-    streams,
-    "] as const;",
-    "",
-    "/**",
-    " * VDLPaths maps rpcName -> operationName -> relative URL path.",
-    " * Useful when wiring custom transports or inspecting generated routes.",
+    " * VDLPaths maps rpcName -> procName -> relative URL path.",
+    " * Paths follow the VPP-2 canonical route rule with lowerFirst(RPCName).",
     " */",
     "export const VDLPaths = {",
     paths,
@@ -58,12 +44,10 @@ export function renderCatalogSource(context: GeneratorContext): string {
 }
 
 /**
- * Renders one catalog entry literal from an operation descriptor.
+ * Renders one catalog entry literal from a procedure descriptor.
  */
-function renderOperationDefinitionLiteral(
-  operation: OperationDescriptor,
-): string {
-  const annotations = operation.annotations.map((annotation) => ({
+function renderProcDefinitionLiteral(proc: ProcDescriptor): string {
+  const annotations = proc.annotations.map((annotation) => ({
     name: annotation.name,
     ...(annotation.argument
       ? { argument: unwrapLiteral<unknown>(annotation.argument) }
@@ -73,10 +57,12 @@ function renderOperationDefinitionLiteral(
   return indent(
     JSON.stringify(
       {
-        rpcName: operation.rpcName,
-        name: operation.name,
-        type: operation.kind,
-        path: `/${operation.rpcName}/${operation.name}`,
+        rpcName: proc.rpcName,
+        rpcRoute: toLowerFirst(proc.rpcName),
+        name: proc.name,
+        path: `/${toLowerFirst(proc.rpcName)}/${proc.name}`,
+        hasInput: Boolean(proc.inputTypeName),
+        hasOutput: Boolean(proc.outputTypeName),
         annotations,
       },
       null,

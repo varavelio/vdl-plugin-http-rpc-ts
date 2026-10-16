@@ -9,9 +9,14 @@ export function renderCoreSource(): string {
 
 const CORE_RUNTIME = dedent(/* ts */ `
   /**
-   * Supported RPC operation kinds.
+   * Preserved annotation metadata for generated procedures.
    */
-  export type OperationType = "proc" | "stream";
+  export interface Annotation {
+    /** Annotation name without the @ prefix. */
+    name: string;
+    /** Optional resolved annotation argument. */
+    argument?: AnnotationValue;
+  }
 
   /**
    * JSON-compatible value used for annotation arguments preserved in catalogs.
@@ -25,33 +30,70 @@ const CORE_RUNTIME = dedent(/* ts */ `
     | { [key: string]: AnnotationValue };
 
   /**
-   * Preserved annotation metadata for generated RPC operations.
+   * Runtime description of a generated procedure.
    */
-  export interface OperationAnnotation {
-    /** Annotation name without the @ prefix. */
-    name: string;
-    /** Optional resolved annotation argument. */
-    argument?: AnnotationValue;
-  }
-
-  /**
-   * Runtime description of a generated procedure or stream.
-   */
-  export interface OperationDefinition {
+  export interface ProcDefinition {
     /** RPC service name as declared in VDL. */
     rpcName: string;
-    /** Operation name as declared in VDL. */
+    /** LowerFirst transport segment precomputed by the generator. */
+    rpcRoute: string;
+    /** Procedure name as declared in VDL. */
     name: string;
-    /** Operation kind. */
-    type: OperationType;
     /** Stable relative path appended to the configured base URL. */
     path: string;
+    /** Whether the procedure declares VDL input. */
+    hasInput: boolean;
+    /** Whether the procedure declares VDL output. */
+    hasOutput: boolean;
     /** Non-marker annotations preserved from the VDL schema. */
-    annotations: OperationAnnotation[];
+    annotations: Annotation[];
   }
 
   /**
-   * Empty-object helper used for procedures or streams that omit input and/or output.
+   * Deep copies annotation payloads so middleware cannot mutate shared state.
+   * Scalars are immutable and shared safely; arrays and objects recurse.
+   */
+  export function cloneAnnotationArgument(argument: AnnotationValue | undefined): AnnotationValue | undefined {
+    if (Array.isArray(argument)) {
+      return argument.map((item) => cloneAnnotationArgument(item) as AnnotationValue);
+    }
+
+    if (typeof argument === "object" && argument !== null) {
+      const clone: Record<string, AnnotationValue> = {};
+      for (const [key, value] of Object.entries(argument)) {
+        clone[key] = cloneAnnotationArgument(value) as AnnotationValue;
+      }
+      return clone;
+    }
+
+    return argument;
+  }
+
+  /**
+   * Returns an isolated copy of one procedure definition for a single request.
+   */
+  export function cloneProcDefinition(proc: ProcDefinition): ProcDefinition {
+    return {
+      ...proc,
+      annotations: proc.annotations.map((annotation) => ({
+        name: annotation.name,
+        ...(annotation.argument !== undefined
+          ? { argument: cloneAnnotationArgument(annotation.argument) }
+          : {}),
+      })),
+    };
+  }
+
+  /**
+   * Reads request input as the expected type for middleware and interceptors.
+   * Returns undefined when the input does not hold that type.
+   */
+  export function inputAs<O>(input: unknown): O | undefined {
+    return input as O | undefined;
+  }
+
+  /**
+   * Empty-object helper used for procedures that omit input and/or output.
    */
   export type Void = Record<string, never>;
 
@@ -90,8 +132,8 @@ const CORE_RUNTIME = dedent(/* ts */ `
   } as const;
 
   /**
-   * Response envelope returned by VDL procedures and yielded by VDL streams.
-   * 
+   * Response envelope returned by VDL procedures.
+   *
    * @typeParam T - The concrete type of the successful response output.
    */
   export type Response<T> =
@@ -218,17 +260,6 @@ const CORE_RUNTIME = dedent(/* ts */ `
     }
 
     return new VdlError({ message: String(err) });
-  }
-
-  /**
-   * Convenience helper for missing-field validation errors.
-   */
-  function errorMissingRequiredField(message: string): VdlError {
-    return new VdlError({
-      message,
-      category: "ValidationError",
-      code: "MISSING_REQUIRED_FIELD",
-    });
   }
 
   /**
