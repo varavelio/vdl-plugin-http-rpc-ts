@@ -60,8 +60,18 @@ const CORE_RUNTIME = dedent(/* ts */ `
 
     if (typeof argument === "object" && argument !== null) {
       const clone: Record<string, AnnotationValue> = {};
-      for (const [key, value] of Object.entries(argument)) {
-        clone[key] = cloneAnnotationArgument(value) as AnnotationValue;
+      for (const key of Object.keys(argument)) {
+        const cloned = cloneAnnotationArgument(argument[key]) as AnnotationValue;
+        if (key === "__proto__") {
+          Object.defineProperty(clone, key, {
+            value: cloned,
+            enumerable: true,
+            configurable: true,
+            writable: true,
+          });
+        } else {
+          clone[key] = cloned;
+        }
       }
       return clone;
     }
