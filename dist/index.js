@@ -2448,7 +2448,7 @@ __name(formatImportPath, "formatImportPath");
 function generateFetchAdapterFile(context) {
   const g = newGenerator().withSpaces(2);
   g.line(
-    `import type { HTTPAdapter, Server } from ${JSON.stringify(formatImportPath("../server", context.options.importExtension))};`
+    `import type { HTTPAdapter, JsonValue, Server } from ${JSON.stringify(formatImportPath("../server", context.options.importExtension))};`
   );
   g.break();
   g.raw(FETCH_ADAPTER.trim());
@@ -2476,6 +2476,8 @@ var FETCH_ADAPTER = dedent2(
    */
   export class FetchAdapter implements HTTPAdapter {
     private readonly request: Request;
+    private status: number;
+    private headers: Record<string, string>;
     private body: string;
     private readonly maxBodyBytes: number;
     private readonly closeCallbacks: Array<() => void>;
@@ -2487,6 +2489,8 @@ var FETCH_ADAPTER = dedent2(
       }
 
       this.request = request;
+      this.status = 200;
+      this.headers = { "Content-Type": "application/json" };
       this.body = "";
       this.maxBodyBytes = maxBodyBytes > 0 ? maxBodyBytes : defaultMaxBodyBytes;
       this.closeCallbacks = [];
@@ -2501,15 +2505,10 @@ var FETCH_ADAPTER = dedent2(
     }
 
     /**
-     * Returns the parsed JSON request body, or {} for missing bodies.
-     * Bodies beyond the cap throw before any handler runs.
+     * Returns the bounded request body as text, or null when it carries nothing.
+     * Bodies beyond the cap throw before anything is returned.
      */
-    async json(): Promise<unknown> {
-      const contentType = this.request.headers.get("content-type") ?? "";
-      if (!contentType.includes("application/json")) {
-        return {};
-      }
-
+    async readBody(): Promise<JsonValue | null> {
       const declared = this.request.headers.get("content-length");
       if (declared !== null && declared !== "") {
         const parsed = Number.parseInt(declared, 10);
@@ -2520,18 +2519,20 @@ var FETCH_ADAPTER = dedent2(
 
       const text = await readBoundedText(this.request, this.maxBodyBytes);
       if (!text || text.trim() === "") {
-        return {};
+        return null;
       }
 
-      return JSON.parse(text);
+      return text;
     }
 
-    /** Buffers the full JSON response body. Content-Type is fixed by toResponse. */
-    send(body: string): void {
+    /** Buffers the status, headers, and body decided by the runtime. */
+    send(status: number, headers: Record<string, string>, body: string): void {
       if (this.aborted) {
         return;
       }
 
+      this.status = status;
+      this.headers = headers;
       this.body = body;
     }
 
@@ -2543,11 +2544,11 @@ var FETCH_ADAPTER = dedent2(
       }
     }
 
-    /** Builds a buffered JSON response after a procedure completes. */
+    /** Builds a buffered response after a procedure completes. */
     toResponse(): Response {
       return new Response(this.body, {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
+        status: this.status,
+        headers: this.headers,
       });
     }
   }
@@ -2764,6 +2765,19 @@ var SERVER_RUNTIME = dedent2(
   /* ts */
   `
   /**
+   * Any JSON value: the only payload shape adapters and the runtime exchange.
+   * Anything else (byte streams, form data, platform objects) is unsupported
+   * and rejected by the type system, not detected at runtime.
+   */
+  export type JsonValue =
+    | string
+    | number
+    | boolean
+    | null
+    | JsonValue[]
+    | { [key: string]: JsonValue };
+
+  /**
    * HTTPAdapter defines the interface required by the RPC server to handle
    * incoming HTTP requests and write procedure responses.
    *
@@ -2772,17 +2786,21 @@ var SERVER_RUNTIME = dedent2(
    */
   export interface HTTPAdapter {
     /**
-     * Returns the parsed JSON body of the request.
-     * Adapters return {} for missing or empty bodies (VPP-2 empty input).
+     * Returns the bounded request payload: buffered text, a pre-parsed
+     * framework value, or null when the request carries no body.
+     * Adapters never interpret the payload; the runtime applies all
+     * request policies (empty input, JSON parsing, size re-check).
+     * Payloads beyond the configured cap throw before anything is returned.
      */
-    json(): Promise<unknown>;
+    readBody(): Promise<JsonValue | null>;
 
     /**
-     * Sends the full JSON response body with HTTP 200 semantics.
-     * Called once per request. Adapters set Content-Type and close
-     * the response as their platform requires.
+     * Sends one response with the given status, headers, and body.
+     * Adapters apply the triple blindly and close the response as their
+     * platform requires. The runtime always decides the three values,
+     * so custom adapters need no protocol knowledge to answer correctly.
      */
-    send(body: string): void;
+    send(status: number, headers: Record<string, string>, body: string): void;
 
     /**
      * Registers a callback to be invoked when the connection is closed by the client.
@@ -3067,9 +3085,9 @@ var SERVER_RUNTIME = dedent2(
         throw new Error("HTTPAdapter is required");
       }
 
-      let rawInput: unknown;
+      let payload: JsonValue | null;
       try {
-        rawInput = await adapter.json();
+        payload = await adapter.readBody();
       } catch (error) {
         this.writeProcResponse(adapter, {
           ok: false,
@@ -3078,8 +3096,32 @@ var SERVER_RUNTIME = dedent2(
         return;
       }
 
-      if (rawInput === undefined || rawInput === null || rawInput === "") {
+      let rawInput: unknown;
+      if (payload === null || payload === undefined) {
         rawInput = {};
+      } else if (typeof payload === "string") {
+        if (payload.trim() === "") {
+          rawInput = {};
+        } else {
+          if (new TextEncoder().encode(payload).length > this.maxRequestBodyBytes) {
+            this.writeProcResponse(adapter, {
+              ok: false,
+              error: this.toBodyError(new Error("Request body too large")),
+            });
+            return;
+          }
+          try {
+            rawInput = JSON.parse(payload);
+          } catch (error) {
+            this.writeProcResponse(adapter, {
+              ok: false,
+              error: this.toBodyError(error),
+            });
+            return;
+          }
+        }
+      } else {
+        rawInput = payload;
       }
 
       const resolved = this.lookupProc(rpcName, procName);
@@ -3194,10 +3236,11 @@ var SERVER_RUNTIME = dedent2(
      * Encoding failures fall back to a generic envelope.
      */
     private writeProcResponse(adapter: HTTPAdapter, response: Response<unknown>): void {
+      const headers = { "Content-Type": "application/json" };
       try {
-        adapter.send(JSON.stringify(response));
+        adapter.send(200, headers, JSON.stringify(response));
       } catch {
-        adapter.send(GENERIC_ERROR_ENVELOPE);
+        adapter.send(200, headers, GENERIC_ERROR_ENVELOPE);
       }
     }
   }
@@ -3525,7 +3568,7 @@ __name(renderRuntimeHelperReference2, "renderRuntimeHelperReference");
 function generateNodeAdapterFile(context) {
   const g = newGenerator().withSpaces(2);
   g.line(
-    `import type { HTTPAdapter, Server } from ${JSON.stringify(formatImportPath("../server", context.options.importExtension))};`
+    `import type { HTTPAdapter, JsonValue, Server } from ${JSON.stringify(formatImportPath("../server", context.options.importExtension))};`
   );
   g.line('import type { IncomingMessage, ServerResponse } from "node:http";');
   g.break();
@@ -3563,7 +3606,7 @@ var NODE_ADAPTER = dedent2(
     private readonly res: ServerResponse;
     private readonly parsedBody: unknown;
     private readonly maxBodyBytes: number;
-    private bodyPromise: Promise<unknown> | null;
+    private bodyPromise: Promise<JsonValue | null> | null;
     private readonly closeCallbacks: Array<() => void>;
     private closed: boolean;
 
@@ -3630,7 +3673,7 @@ var NODE_ADAPTER = dedent2(
 
       let rejectBody: (error: Error) => void = () => {};
 
-      this.bodyPromise = new Promise<unknown>((resolve, reject) => {
+      this.bodyPromise = new Promise<JsonValue | null>((resolve, reject) => {
         rejectBody = reject;
 
         this.req.on("data", (chunk: Buffer) => {
@@ -3650,17 +3693,13 @@ var NODE_ADAPTER = dedent2(
             return;
           }
           settled = true;
-          try {
-            const bodyString = Buffer.concat(chunks).toString("utf-8");
-            if (!bodyString || bodyString.trim() === "") {
-              resolve({});
-              return;
-            }
-
-            resolve(JSON.parse(bodyString));
-          } catch (error) {
-            reject(new Error("Failed to parse JSON body: " + String(error)));
+          const bodyString = Buffer.concat(chunks).toString("utf-8");
+          if (!bodyString || bodyString.trim() === "") {
+            resolve(null);
+            return;
           }
+
+          resolve(bodyString);
         });
 
         this.req.on("error", (error) => {
@@ -3670,28 +3709,27 @@ var NODE_ADAPTER = dedent2(
     }
 
     /**
-     * Returns the parsed JSON request body, or {} for missing bodies.
-     * Bodies beyond the cap throw before any handler runs.
+     * Returns the bounded request payload: the pre-parsed framework value
+     * when one was provided, the buffered body as text otherwise,
+     * or null when the request carries no body.
+     * Bodies beyond the cap throw before anything is returned.
      */
-    async json(): Promise<unknown> {
+    async readBody(): Promise<JsonValue | null> {
       if (this.parsedBody !== undefined) {
-        if (this.parsedBody === null) {
-          return {};
-        }
-        return this.parsedBody;
+        return this.parsedBody as JsonValue | null;
       }
 
-      return this.bodyPromise ?? {};
+      return this.bodyPromise ?? null;
     }
 
-    /** Writes the full JSON response body and ends the response. */
-    send(body: string): void {
+    /** Applies the status, headers, and body decided by the runtime, then ends the response. */
+    send(status: number, headers: Record<string, string>, body: string): void {
       if (this.closed || this.res.writableEnded) {
         return;
       }
 
       if (!this.res.headersSent) {
-        this.res.setHeader("Content-Type", "application/json");
+        this.res.writeHead(status, headers);
       }
       this.res.write(body);
       if (!this.res.writableEnded) {

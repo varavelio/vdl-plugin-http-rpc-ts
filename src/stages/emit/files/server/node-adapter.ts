@@ -14,7 +14,7 @@ export function generateNodeAdapterFile(
   const g = newGenerator().withSpaces(2);
 
   g.line(
-    `import type { HTTPAdapter, Server } from ${JSON.stringify(formatImportPath("../server", context.options.importExtension))};`,
+    `import type { HTTPAdapter, JsonValue, Server } from ${JSON.stringify(formatImportPath("../server", context.options.importExtension))};`,
   );
   g.line('import type { IncomingMessage, ServerResponse } from "node:http";');
   g.break();
@@ -51,7 +51,7 @@ const NODE_ADAPTER = dedent(/* ts */ `
     private readonly res: ServerResponse;
     private readonly parsedBody: unknown;
     private readonly maxBodyBytes: number;
-    private bodyPromise: Promise<unknown> | null;
+    private bodyPromise: Promise<JsonValue | null> | null;
     private readonly closeCallbacks: Array<() => void>;
     private closed: boolean;
 
@@ -118,7 +118,7 @@ const NODE_ADAPTER = dedent(/* ts */ `
 
       let rejectBody: (error: Error) => void = () => {};
 
-      this.bodyPromise = new Promise<unknown>((resolve, reject) => {
+      this.bodyPromise = new Promise<JsonValue | null>((resolve, reject) => {
         rejectBody = reject;
 
         this.req.on("data", (chunk: Buffer) => {
@@ -138,17 +138,13 @@ const NODE_ADAPTER = dedent(/* ts */ `
             return;
           }
           settled = true;
-          try {
-            const bodyString = Buffer.concat(chunks).toString("utf-8");
-            if (!bodyString || bodyString.trim() === "") {
-              resolve({});
-              return;
-            }
-
-            resolve(JSON.parse(bodyString));
-          } catch (error) {
-            reject(new Error("Failed to parse JSON body: " + String(error)));
+          const bodyString = Buffer.concat(chunks).toString("utf-8");
+          if (!bodyString || bodyString.trim() === "") {
+            resolve(null);
+            return;
           }
+
+          resolve(bodyString);
         });
 
         this.req.on("error", (error) => {
@@ -158,28 +154,27 @@ const NODE_ADAPTER = dedent(/* ts */ `
     }
 
     /**
-     * Returns the parsed JSON request body, or {} for missing bodies.
-     * Bodies beyond the cap throw before any handler runs.
+     * Returns the bounded request payload: the pre-parsed framework value
+     * when one was provided, the buffered body as text otherwise,
+     * or null when the request carries no body.
+     * Bodies beyond the cap throw before anything is returned.
      */
-    async json(): Promise<unknown> {
+    async readBody(): Promise<JsonValue | null> {
       if (this.parsedBody !== undefined) {
-        if (this.parsedBody === null) {
-          return {};
-        }
-        return this.parsedBody;
+        return this.parsedBody as JsonValue | null;
       }
 
-      return this.bodyPromise ?? {};
+      return this.bodyPromise ?? null;
     }
 
-    /** Writes the full JSON response body and ends the response. */
-    send(body: string): void {
+    /** Applies the status, headers, and body decided by the runtime, then ends the response. */
+    send(status: number, headers: Record<string, string>, body: string): void {
       if (this.closed || this.res.writableEnded) {
         return;
       }
 
       if (!this.res.headersSent) {
-        this.res.setHeader("Content-Type", "application/json");
+        this.res.writeHead(status, headers);
       }
       this.res.write(body);
       if (!this.res.writableEnded) {

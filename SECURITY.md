@@ -14,6 +14,10 @@ bigger is rejected with an `ok:false` envelope before middleware or handlers
 run. You can change the limit with `SetMaxRequestBodyBytes`; passing zero or
 a negative value restores the default.
 
+Adapters enforce the cap while
+buffering and the runtime re-checks buffered text, so even a faulty custom
+adapter fails closed.
+
 **Response size.** The client applies the same rule in the other direction:
 at most 4 MiB per response, tunable with `WithMaxResponseBodyBytes`.
 A compromised or misbehaving server cannot exhaust client memory.

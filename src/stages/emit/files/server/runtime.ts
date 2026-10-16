@@ -9,6 +9,19 @@ export function renderServerRuntimeSource(): string {
 
 const SERVER_RUNTIME = dedent(/* ts */ `
   /**
+   * Any JSON value: the only payload shape adapters and the runtime exchange.
+   * Anything else (byte streams, form data, platform objects) is unsupported
+   * and rejected by the type system, not detected at runtime.
+   */
+  export type JsonValue =
+    | string
+    | number
+    | boolean
+    | null
+    | JsonValue[]
+    | { [key: string]: JsonValue };
+
+  /**
    * HTTPAdapter defines the interface required by the RPC server to handle
    * incoming HTTP requests and write procedure responses.
    *
@@ -17,17 +30,21 @@ const SERVER_RUNTIME = dedent(/* ts */ `
    */
   export interface HTTPAdapter {
     /**
-     * Returns the parsed JSON body of the request.
-     * Adapters return {} for missing or empty bodies (VPP-2 empty input).
+     * Returns the bounded request payload: buffered text, a pre-parsed
+     * framework value, or null when the request carries no body.
+     * Adapters never interpret the payload; the runtime applies all
+     * request policies (empty input, JSON parsing, size re-check).
+     * Payloads beyond the configured cap throw before anything is returned.
      */
-    json(): Promise<unknown>;
+    readBody(): Promise<JsonValue | null>;
 
     /**
-     * Sends the full JSON response body with HTTP 200 semantics.
-     * Called once per request. Adapters set Content-Type and close
-     * the response as their platform requires.
+     * Sends one response with the given status, headers, and body.
+     * Adapters apply the triple blindly and close the response as their
+     * platform requires. The runtime always decides the three values,
+     * so custom adapters need no protocol knowledge to answer correctly.
      */
-    send(body: string): void;
+    send(status: number, headers: Record<string, string>, body: string): void;
 
     /**
      * Registers a callback to be invoked when the connection is closed by the client.
@@ -312,9 +329,9 @@ const SERVER_RUNTIME = dedent(/* ts */ `
         throw new Error("HTTPAdapter is required");
       }
 
-      let rawInput: unknown;
+      let payload: JsonValue | null;
       try {
-        rawInput = await adapter.json();
+        payload = await adapter.readBody();
       } catch (error) {
         this.writeProcResponse(adapter, {
           ok: false,
@@ -323,8 +340,32 @@ const SERVER_RUNTIME = dedent(/* ts */ `
         return;
       }
 
-      if (rawInput === undefined || rawInput === null || rawInput === "") {
+      let rawInput: unknown;
+      if (payload === null || payload === undefined) {
         rawInput = {};
+      } else if (typeof payload === "string") {
+        if (payload.trim() === "") {
+          rawInput = {};
+        } else {
+          if (new TextEncoder().encode(payload).length > this.maxRequestBodyBytes) {
+            this.writeProcResponse(adapter, {
+              ok: false,
+              error: this.toBodyError(new Error("Request body too large")),
+            });
+            return;
+          }
+          try {
+            rawInput = JSON.parse(payload);
+          } catch (error) {
+            this.writeProcResponse(adapter, {
+              ok: false,
+              error: this.toBodyError(error),
+            });
+            return;
+          }
+        }
+      } else {
+        rawInput = payload;
       }
 
       const resolved = this.lookupProc(rpcName, procName);
@@ -439,10 +480,11 @@ const SERVER_RUNTIME = dedent(/* ts */ `
      * Encoding failures fall back to a generic envelope.
      */
     private writeProcResponse(adapter: HTTPAdapter, response: Response<unknown>): void {
+      const headers = { "Content-Type": "application/json" };
       try {
-        adapter.send(JSON.stringify(response));
+        adapter.send(200, headers, JSON.stringify(response));
       } catch {
-        adapter.send(GENERIC_ERROR_ENVELOPE);
+        adapter.send(200, headers, GENERIC_ERROR_ENVELOPE);
       }
     }
   }

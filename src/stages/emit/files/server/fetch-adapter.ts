@@ -14,7 +14,7 @@ export function generateFetchAdapterFile(
   const g = newGenerator().withSpaces(2);
 
   g.line(
-    `import type { HTTPAdapter, Server } from ${JSON.stringify(formatImportPath("../server", context.options.importExtension))};`,
+    `import type { HTTPAdapter, JsonValue, Server } from ${JSON.stringify(formatImportPath("../server", context.options.importExtension))};`,
   );
   g.break();
   g.raw(FETCH_ADAPTER.trim());
@@ -41,6 +41,8 @@ const FETCH_ADAPTER = dedent(/* ts */ `
    */
   export class FetchAdapter implements HTTPAdapter {
     private readonly request: Request;
+    private status: number;
+    private headers: Record<string, string>;
     private body: string;
     private readonly maxBodyBytes: number;
     private readonly closeCallbacks: Array<() => void>;
@@ -52,6 +54,8 @@ const FETCH_ADAPTER = dedent(/* ts */ `
       }
 
       this.request = request;
+      this.status = 200;
+      this.headers = { "Content-Type": "application/json" };
       this.body = "";
       this.maxBodyBytes = maxBodyBytes > 0 ? maxBodyBytes : defaultMaxBodyBytes;
       this.closeCallbacks = [];
@@ -66,15 +70,10 @@ const FETCH_ADAPTER = dedent(/* ts */ `
     }
 
     /**
-     * Returns the parsed JSON request body, or {} for missing bodies.
-     * Bodies beyond the cap throw before any handler runs.
+     * Returns the bounded request body as text, or null when it carries nothing.
+     * Bodies beyond the cap throw before anything is returned.
      */
-    async json(): Promise<unknown> {
-      const contentType = this.request.headers.get("content-type") ?? "";
-      if (!contentType.includes("application/json")) {
-        return {};
-      }
-
+    async readBody(): Promise<JsonValue | null> {
       const declared = this.request.headers.get("content-length");
       if (declared !== null && declared !== "") {
         const parsed = Number.parseInt(declared, 10);
@@ -85,18 +84,20 @@ const FETCH_ADAPTER = dedent(/* ts */ `
 
       const text = await readBoundedText(this.request, this.maxBodyBytes);
       if (!text || text.trim() === "") {
-        return {};
+        return null;
       }
 
-      return JSON.parse(text);
+      return text;
     }
 
-    /** Buffers the full JSON response body. Content-Type is fixed by toResponse. */
-    send(body: string): void {
+    /** Buffers the status, headers, and body decided by the runtime. */
+    send(status: number, headers: Record<string, string>, body: string): void {
       if (this.aborted) {
         return;
       }
 
+      this.status = status;
+      this.headers = headers;
       this.body = body;
     }
 
@@ -108,11 +109,11 @@ const FETCH_ADAPTER = dedent(/* ts */ `
       }
     }
 
-    /** Builds a buffered JSON response after a procedure completes. */
+    /** Builds a buffered response after a procedure completes. */
     toResponse(): Response {
       return new Response(this.body, {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
+        status: this.status,
+        headers: this.headers,
       });
     }
   }
