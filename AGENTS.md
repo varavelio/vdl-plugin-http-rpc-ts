@@ -10,7 +10,8 @@ It intentionally does not generate business types, enums, or constants. Those co
 
 To create the plugin, we are using the VDL Plugin SDK. It is IMPERATIVE that you download and read the manual for using the SDK BEFORE starting ANY task, as it defines and explains many important things. It is also important that you use the manual information when writing tests or any utility code, as it contains helpers that should be used whenever possible to avoid duplicating code and keep the code of all VDL plugins in a similar way.
 
-VDL Plugin SDK manual URL (download and read it): https://vdl-plugin-sdk.varavel.com/llms.txt
+- VDL Plugin SDK manual URL (download and read it): https://vdl-plugin-sdk.varavel.com/llms.txt
+- VDL VPP-2 Specification: https://vdl.varavel.com/docs/protocols/http-rpc/index.md
 
 ## Maintaining this Document
 
