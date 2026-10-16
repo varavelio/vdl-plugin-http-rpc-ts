@@ -81,7 +81,7 @@ function toPluginError(error) {
 }
 __name(toPluginError, "toPluginError");
 
-// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.115.0/helpers/typeof.js
+// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.154.0/helpers/esm/typeof.js
 function _typeof(o) {
   "@babel/helpers - typeof";
   return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o2) {
@@ -92,7 +92,7 @@ function _typeof(o) {
 }
 __name(_typeof, "_typeof");
 
-// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.115.0/helpers/toPrimitive.js
+// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.154.0/helpers/esm/toPrimitive.js
 function toPrimitive(t, r) {
   if ("object" != _typeof(t) || !t) return t;
   var e = t[Symbol.toPrimitive];
@@ -105,14 +105,14 @@ function toPrimitive(t, r) {
 }
 __name(toPrimitive, "toPrimitive");
 
-// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.115.0/helpers/toPropertyKey.js
+// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.154.0/helpers/esm/toPropertyKey.js
 function toPropertyKey(t) {
   var i = toPrimitive(t, "string");
   return "symbol" == _typeof(i) ? i : i + "";
 }
 __name(toPropertyKey, "toPropertyKey");
 
-// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.115.0/helpers/defineProperty.js
+// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.154.0/helpers/esm/defineProperty.js
 function _defineProperty(e, r, t) {
   return (r = toPropertyKey(r)) in e ? Object.defineProperty(e, r, {
     value: t,
@@ -123,7 +123,7 @@ function _defineProperty(e, r, t) {
 }
 __name(_defineProperty, "_defineProperty");
 
-// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.115.0/helpers/objectSpread2.js
+// node_modules/@varavel/vdl-plugin-sdk/dist/_virtual/_@oxc-project_runtime@0.154.0/helpers/esm/objectSpread2.js
 function ownKeys(e, r) {
   var t = Object.keys(e);
   if (Object.getOwnPropertySymbols) {
@@ -148,41 +148,44 @@ function _objectSpread2(e) {
 }
 __name(_objectSpread2, "_objectSpread2");
 
-// node_modules/@varavel/vdl-plugin-sdk/dist/utils/rpc/assert-valid-ir-for-rpc.js
-var RPC_ANNOTATION_NAME = "rpc";
+// node_modules/@varavel/vdl-plugin-sdk/dist/utils/rpc/assert-valid-ir-for-http-rpc.js
+var HTTP_RPC_ANNOTATION_NAME = "httpRpc";
 var PROC_ANNOTATION_NAME = "proc";
-var STREAM_ANNOTATION_NAME = "stream";
-function assertValidIrForRpc(ir) {
+function assertValidIrForHttpRpc(ir) {
   const rpcTypes = ir.types.filter((typeDef) => {
-    return hasAnnotation(typeDef.annotations, RPC_ANNOTATION_NAME);
+    return hasAnnotation(typeDef.annotations, HTTP_RPC_ANNOTATION_NAME);
   });
-  for (const rpcType of rpcTypes) assertValidRpcType(rpcType);
+  for (const rpcType of rpcTypes) assertValidHttpRpcType(rpcType);
 }
-__name(assertValidIrForRpc, "assertValidIrForRpc");
-function assertValidRpcType(typeDef) {
+__name(assertValidIrForHttpRpc, "assertValidIrForHttpRpc");
+function assertValidHttpRpcType(typeDef) {
   var _typeDef$typeRef$obje;
-  assert(typeDef.typeRef.kind === "object", `Type ${JSON.stringify(typeDef.name)} is annotated with @rpc and must be an object type.`, typeDef.position);
+  const rpcAnnotation = findAnnotation(typeDef.annotations, HTTP_RPC_ANNOTATION_NAME);
+  if ((rpcAnnotation === null || rpcAnnotation === void 0 ? void 0 : rpcAnnotation.argument) !== void 0) fail(`Type ${JSON.stringify(typeDef.name)} annotation @httpRpc must not have arguments.`, rpcAnnotation.position);
+  assert(typeDef.typeRef.kind === "object", `Type ${JSON.stringify(typeDef.name)} is annotated with @httpRpc and must be an object type.`, typeDef.position);
   const fields = (_typeDef$typeRef$obje = typeDef.typeRef.objectFields) !== null && _typeDef$typeRef$obje !== void 0 ? _typeDef$typeRef$obje : [];
-  for (const field of fields) assertValidRpcOperationField(typeDef, field);
+  for (const field of fields) assertValidHttpRpcOperationField(typeDef, field);
 }
-__name(assertValidRpcType, "assertValidRpcType");
-function assertValidRpcOperationField(rpcType, field) {
-  const hasProc = hasAnnotation(field.annotations, PROC_ANNOTATION_NAME);
-  const hasStream = hasAnnotation(field.annotations, STREAM_ANNOTATION_NAME);
-  if (!hasProc && !hasStream) return;
-  if (hasProc && hasStream) fail(`Field ${JSON.stringify(`${rpcType.name}.${field.name}`)} cannot be annotated with both @proc and @stream.`, field.position);
-  const operationAnnotation = hasProc ? PROC_ANNOTATION_NAME : STREAM_ANNOTATION_NAME;
-  assert(field.typeRef.kind === "object", `Field ${JSON.stringify(`${rpcType.name}.${field.name}`)} is annotated with @${operationAnnotation} and must be an object type.`, field.position);
+__name(assertValidHttpRpcType, "assertValidHttpRpcType");
+function assertValidHttpRpcOperationField(rpcType, field) {
+  const procAnnotation = findAnnotation(field.annotations, PROC_ANNOTATION_NAME);
+  if (!procAnnotation) return;
+  if (procAnnotation.argument !== void 0) fail(`Field ${JSON.stringify(`${rpcType.name}.${field.name}`)} annotation @proc must not have arguments.`, procAnnotation.position);
+  assert(field.typeRef.kind === "object", `Field ${JSON.stringify(`${rpcType.name}.${field.name}`)} is annotated with @proc and must be an inline object type.`, field.position);
   const inputField = findFieldByName(field.typeRef.objectFields, "input");
   const outputField = findFieldByName(field.typeRef.objectFields, "output");
-  if (inputField && inputField.typeRef.kind !== "object") fail(`Field "input" in operation ${JSON.stringify(`${rpcType.name}.${field.name}`)} must be an object type when present.`, withFallbackFile(inputField.position, field.position));
-  if (outputField && outputField.typeRef.kind !== "object") fail(`Field "output" in operation ${JSON.stringify(`${rpcType.name}.${field.name}`)} must be an object type when present.`, withFallbackFile(outputField.position, field.position));
+  if (inputField && inputField.typeRef.kind !== "object") fail(`Field "input" in operation ${JSON.stringify(`${rpcType.name}.${field.name}`)} must be an inline object type when present.`, withFallbackFile(inputField.position, field.position));
+  if (outputField && outputField.typeRef.kind !== "object") fail(`Field "output" in operation ${JSON.stringify(`${rpcType.name}.${field.name}`)} must be an inline object type when present.`, withFallbackFile(outputField.position, field.position));
 }
-__name(assertValidRpcOperationField, "assertValidRpcOperationField");
+__name(assertValidHttpRpcOperationField, "assertValidHttpRpcOperationField");
 function hasAnnotation(annotations, name) {
   return annotations.some((annotation) => annotation.name === name);
 }
 __name(hasAnnotation, "hasAnnotation");
+function findAnnotation(annotations, name) {
+  return annotations.find((annotation) => annotation.name === name);
+}
+__name(findAnnotation, "findAnnotation");
 function findFieldByName(fields, name) {
   return fields === null || fields === void 0 ? void 0 : fields.find((field) => field.name === name);
 }
@@ -334,27 +337,6 @@ function getAnnotationArg(annotations, name) {
 }
 __name(getAnnotationArg, "getAnnotationArg");
 
-// node_modules/@varavel/vdl-plugin-sdk/dist/utils/strings/words.js
-var ACRONYM_TO_CAPITALIZED_WORD_BOUNDARY_RE = /([A-Z]+)([A-Z][a-z])/g;
-var LOWERCASE_OR_DIGIT_TO_UPPERCASE_BOUNDARY_RE = /([a-z0-9])([A-Z])/g;
-var NON_ALPHANUMERIC_SEQUENCE_RE = /[^A-Za-z0-9]+/g;
-var WHITESPACE_SEQUENCE_RE = /\s+/;
-function words(str) {
-  const normalized = str.replace(ACRONYM_TO_CAPITALIZED_WORD_BOUNDARY_RE, "$1 $2").replace(LOWERCASE_OR_DIGIT_TO_UPPERCASE_BOUNDARY_RE, "$1 $2").replace(NON_ALPHANUMERIC_SEQUENCE_RE, " ").trim();
-  return normalized.length === 0 ? [] : normalized.split(WHITESPACE_SEQUENCE_RE);
-}
-__name(words, "words");
-
-// node_modules/@varavel/vdl-plugin-sdk/dist/utils/strings/pascal-case.js
-function capitalize(word) {
-  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-}
-__name(capitalize, "capitalize");
-function pascalCase(str) {
-  return words(str).map(capitalize).join("");
-}
-__name(pascalCase, "pascalCase");
-
 // node_modules/@varavel/vdl-plugin-sdk/dist/utils/ir/unwrap-literal.js
 function unwrapLiteral(value) {
   return unwrapLiteralValue(value);
@@ -385,6 +367,27 @@ function unwrapLiteralValue(value) {
   }
 }
 __name(unwrapLiteralValue, "unwrapLiteralValue");
+
+// node_modules/@varavel/vdl-plugin-sdk/dist/utils/strings/words.js
+var ACRONYM_TO_CAPITALIZED_WORD_BOUNDARY_RE = /([A-Z]+)([A-Z][a-z])/g;
+var LOWERCASE_OR_DIGIT_TO_UPPERCASE_BOUNDARY_RE = /([a-z0-9])([A-Z])/g;
+var NON_ALPHANUMERIC_SEQUENCE_RE = /[^A-Za-z0-9]+/g;
+var WHITESPACE_SEQUENCE_RE = /\s+/;
+function words(str) {
+  const normalized = str.replace(ACRONYM_TO_CAPITALIZED_WORD_BOUNDARY_RE, "$1 $2").replace(LOWERCASE_OR_DIGIT_TO_UPPERCASE_BOUNDARY_RE, "$1 $2").replace(NON_ALPHANUMERIC_SEQUENCE_RE, " ").trim();
+  return normalized.length === 0 ? [] : normalized.split(WHITESPACE_SEQUENCE_RE);
+}
+__name(words, "words");
+
+// node_modules/@varavel/vdl-plugin-sdk/dist/utils/strings/pascal-case.js
+function capitalize(word) {
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+__name(capitalize, "capitalize");
+function pascalCase(str) {
+  return words(str).map(capitalize).join("");
+}
+__name(pascalCase, "pascalCase");
 
 // src/shared/comments.ts
 var DEFAULT_DEPRECATED_MESSAGE = "This symbol is deprecated and should not be used in new code.";
@@ -430,6 +433,16 @@ function writeDocCommentLines(g, lines) {
   g.line(" */");
 }
 __name(writeDocCommentLines, "writeDocCommentLines");
+
+// node_modules/@varavel/vdl-plugin-sdk/dist/utils/strings/indent.js
+function indent(input, prefix = "  ") {
+  if (input.length === 0 || prefix.length === 0) return input;
+  return input.split("\n").map((line) => {
+    if (line.trim().length === 0) return line;
+    return `${prefix}${line}`;
+  }).join("\n");
+}
+__name(indent, "indent");
 
 // node_modules/@varavel/vdl-plugin-sdk/dist/utils/strings/camel-case.js
 function capitalize2(word) {
@@ -556,16 +569,6 @@ function dedent2(input) {
 }
 __name(dedent2, "dedent");
 
-// node_modules/@varavel/vdl-plugin-sdk/dist/utils/strings/indent.js
-function indent(input, prefix = "  ") {
-  if (input.length === 0 || prefix.length === 0) return input;
-  return input.split("\n").map((line) => {
-    if (line.trim().length === 0) return line;
-    return `${prefix}${line}`;
-  }).join("\n");
-}
-__name(indent, "indent");
-
 // node_modules/@varavel/vdl-plugin-sdk/dist/utils/strings/limit-blank-lines.js
 var cache = /* @__PURE__ */ new Map();
 function limitBlankLines(str, maxConsecutive = 0) {
@@ -595,36 +598,42 @@ function renderTypeScriptFile(body) {
 }
 __name(renderTypeScriptFile, "renderTypeScriptFile");
 
+// src/shared/naming.ts
+function toInlineTypeName(parentTypeName, fieldName) {
+  return `${parentTypeName}${pascalCase(fieldName)}`;
+}
+__name(toInlineTypeName, "toInlineTypeName");
+function toClientOperationMethodName(rpcName, operationName) {
+  return `${camelCase(rpcName)}${pascalCase(operationName)}`;
+}
+__name(toClientOperationMethodName, "toClientOperationMethodName");
+function toLowerFirst(value) {
+  if (value.length === 0) return value;
+  return value.charAt(0).toLowerCase() + value.slice(1);
+}
+__name(toLowerFirst, "toLowerFirst");
+
 // src/stages/emit/files/shared/catalog.ts
 function renderCatalogSource(context) {
-  const procedures = context.procedures.map((operation) => `${renderOperationDefinitionLiteral(operation)},`).join("\n");
-  const streams = context.streams.map((operation) => `${renderOperationDefinitionLiteral(operation)},`).join("\n");
+  const procs = context.procs.map((proc) => `${renderProcDefinitionLiteral(proc)},`).join("\n");
   const paths = context.services.map((service) => {
-    const operations = service.operations.map(
-      (operation) => `    ${operation.name}: ${JSON.stringify(`/${operation.rpcName}/${operation.name}`)},`
+    const entries = service.procs.map(
+      (proc) => `    ${proc.name}: ${JSON.stringify(`/${toLowerFirst(proc.rpcName)}/${proc.name}`)},`
     ).join("\n");
-    return [`  ${service.name}: {`, operations, "  },"].join("\n");
+    return [`  ${service.name}: {`, entries, "  },"].join("\n");
   }).join("\n");
   return [
     "/**",
-    " * VDLProcedures lists every generated procedure definition with preserved schema metadata.",
+    " * VDLProcs lists every generated procedure definition with preserved schema metadata.",
     " * Use it for introspection, tracing, and building operation-aware tooling.",
     " */",
-    "export const VDLProcedures: OperationDefinition[] = [",
-    procedures,
+    "export const VDLProcs: ProcDefinition[] = [",
+    procs,
     "] as const;",
     "",
     "/**",
-    " * VDLStreams lists every generated stream definition with preserved schema metadata.",
-    " * Use it for introspection, tracing, and building operation-aware tooling.",
-    " */",
-    "export const VDLStreams: OperationDefinition[] = [",
-    streams,
-    "] as const;",
-    "",
-    "/**",
-    " * VDLPaths maps rpcName -> operationName -> relative URL path.",
-    " * Useful when wiring custom transports or inspecting generated routes.",
+    " * VDLPaths maps rpcName -> procName -> relative URL path.",
+    " * Paths follow the VPP-2 canonical route rule with lowerFirst(RPCName).",
     " */",
     "export const VDLPaths = {",
     paths,
@@ -632,17 +641,19 @@ function renderCatalogSource(context) {
   ].join("\n");
 }
 __name(renderCatalogSource, "renderCatalogSource");
-function renderOperationDefinitionLiteral(operation) {
-  const annotations = operation.annotations.map((annotation) => __spreadValues({
+function renderProcDefinitionLiteral(proc) {
+  const annotations = proc.annotations.map((annotation) => __spreadValues({
     name: annotation.name
   }, annotation.argument ? { argument: unwrapLiteral(annotation.argument) } : {}));
   return indent(
     JSON.stringify(
       {
-        rpcName: operation.rpcName,
-        name: operation.name,
-        type: operation.kind,
-        path: `/${operation.rpcName}/${operation.name}`,
+        rpcName: proc.rpcName,
+        rpcRoute: toLowerFirst(proc.rpcName),
+        name: proc.name,
+        path: `/${toLowerFirst(proc.rpcName)}/${proc.name}`,
+        hasInput: Boolean(proc.inputTypeName),
+        hasOutput: Boolean(proc.outputTypeName),
         annotations
       },
       null,
@@ -650,7 +661,7 @@ function renderOperationDefinitionLiteral(operation) {
     )
   );
 }
-__name(renderOperationDefinitionLiteral, "renderOperationDefinitionLiteral");
+__name(renderProcDefinitionLiteral, "renderProcDefinitionLiteral");
 
 // src/stages/emit/files/shared/core.ts
 function renderCoreSource() {
@@ -661,9 +672,14 @@ var CORE_RUNTIME = dedent2(
   /* ts */
   `
   /**
-   * Supported RPC operation kinds.
+   * Preserved annotation metadata for generated procedures.
    */
-  export type OperationType = "proc" | "stream";
+  export interface Annotation {
+    /** Annotation name without the @ prefix. */
+    name: string;
+    /** Optional resolved annotation argument. */
+    argument?: AnnotationValue;
+  }
 
   /**
    * JSON-compatible value used for annotation arguments preserved in catalogs.
@@ -677,33 +693,70 @@ var CORE_RUNTIME = dedent2(
     | { [key: string]: AnnotationValue };
 
   /**
-   * Preserved annotation metadata for generated RPC operations.
+   * Runtime description of a generated procedure.
    */
-  export interface OperationAnnotation {
-    /** Annotation name without the @ prefix. */
-    name: string;
-    /** Optional resolved annotation argument. */
-    argument?: AnnotationValue;
-  }
-
-  /**
-   * Runtime description of a generated procedure or stream.
-   */
-  export interface OperationDefinition {
+  export interface ProcDefinition {
     /** RPC service name as declared in VDL. */
     rpcName: string;
-    /** Operation name as declared in VDL. */
+    /** LowerFirst transport segment precomputed by the generator. */
+    rpcRoute: string;
+    /** Procedure name as declared in VDL. */
     name: string;
-    /** Operation kind. */
-    type: OperationType;
     /** Stable relative path appended to the configured base URL. */
     path: string;
+    /** Whether the procedure declares VDL input. */
+    hasInput: boolean;
+    /** Whether the procedure declares VDL output. */
+    hasOutput: boolean;
     /** Non-marker annotations preserved from the VDL schema. */
-    annotations: OperationAnnotation[];
+    annotations: Annotation[];
   }
 
   /**
-   * Empty-object helper used for procedures or streams that omit input and/or output.
+   * Deep copies annotation payloads so middleware cannot mutate shared state.
+   * Scalars are immutable and shared safely; arrays and objects recurse.
+   */
+  export function cloneAnnotationArgument(argument: AnnotationValue | undefined): AnnotationValue | undefined {
+    if (Array.isArray(argument)) {
+      return argument.map((item) => cloneAnnotationArgument(item) as AnnotationValue);
+    }
+
+    if (typeof argument === "object" && argument !== null) {
+      const clone: Record<string, AnnotationValue> = {};
+      for (const [key, value] of Object.entries(argument)) {
+        clone[key] = cloneAnnotationArgument(value) as AnnotationValue;
+      }
+      return clone;
+    }
+
+    return argument;
+  }
+
+  /**
+   * Returns an isolated copy of one procedure definition for a single request.
+   */
+  export function cloneProcDefinition(proc: ProcDefinition): ProcDefinition {
+    return {
+      ...proc,
+      annotations: proc.annotations.map((annotation) => ({
+        name: annotation.name,
+        ...(annotation.argument !== undefined
+          ? { argument: cloneAnnotationArgument(annotation.argument) }
+          : {}),
+      })),
+    };
+  }
+
+  /**
+   * Reads request input as the expected type for middleware and interceptors.
+   * Returns undefined when the input does not hold that type.
+   */
+  export function inputAs<O>(input: unknown): O | undefined {
+    return input as O | undefined;
+  }
+
+  /**
+   * Empty-object helper used for procedures that omit input and/or output.
    */
   export type Void = Record<string, never>;
 
@@ -742,8 +795,8 @@ var CORE_RUNTIME = dedent2(
   } as const;
 
   /**
-   * Response envelope returned by VDL procedures and yielded by VDL streams.
-   * 
+   * Response envelope returned by VDL procedures.
+   *
    * @typeParam T - The concrete type of the successful response output.
    */
   export type Response<T> =
@@ -873,17 +926,6 @@ var CORE_RUNTIME = dedent2(
   }
 
   /**
-   * Convenience helper for missing-field validation errors.
-   */
-  function errorMissingRequiredField(message: string): VdlError {
-    return new VdlError({
-      message,
-      category: "ValidationError",
-      code: "MISSING_REQUIRED_FIELD",
-    });
-  }
-
-  /**
    * Sleeps for the given number of milliseconds.
    */
   function sleep(ms: number): Promise<void> {
@@ -913,29 +955,9 @@ var CLIENT_RUNTIME = dedent2(
     /** Original input payload. */
     input: unknown;
     /** Resolved operation metadata, including annotations. */
-    operation?: OperationDefinition;
+    operation?: ProcDefinition;
     /** Whether the generated runtime would retry without custom logic. */
     defaultRetryable: boolean;
-  }
-
-  /**
-   * Context provided to a reconnect decider.
-   */
-  export interface ReconnectDecisionContext {
-    /** Current reconnect attempt number, starting at 1. */
-    attempt: number;
-    /** Maximum configured reconnect attempts. */
-    maxAttempts: number;
-    /** Error that triggered the reconnect evaluation. */
-    error: VdlError;
-    /** Original subscription input payload. */
-    input: unknown;
-    /** Resolved operation metadata, including annotations. */
-    operation?: OperationDefinition;
-    /** Calculated delay before the next reconnect attempt. */
-    delayMs: number;
-    /** Whether the generated runtime would reconnect without custom logic. */
-    defaultReconnectable: boolean;
   }
 
   /**
@@ -964,27 +986,10 @@ var CLIENT_RUNTIME = dedent2(
   }
 
   /**
-   * Controls automatic reconnection behavior for streams.
-   *
-   * When a stream connection is lost due to network issues or server errors,
-   * the client can automatically attempt to reconnect with exponential backoff.
-   */
-  export interface ReconnectConfig {
-    maxAttempts: number;
-    initialDelayMs: number;
-    maxDelayMs: number;
-    delayMultiplier: number;
-    jitter: number;
-    shouldReconnect?: (
-      context: ReconnectDecisionContext,
-    ) => boolean | Promise<boolean>;
-  }
-
-  /**
    * A function that adds or modifies headers before each request.
    *
    * Header providers are executed in this order: global, RPC-level, operation-level.
-   * They run before every request attempt, including retries and reconnects.
+   * They run before every request attempt, including retries.
    */
   export type HeaderProvider = (
     headers: Record<string, string>,
@@ -997,8 +1002,8 @@ var CLIENT_RUNTIME = dedent2(
     rpcName: string;
     operationName: string;
     input: unknown;
-    type: OperationType;
-    operation?: OperationDefinition;
+    type: "proc";
+    operation?: ProcDefinition;
   }
 
   /** Final function invoked by the interceptor chain. */
@@ -1017,7 +1022,15 @@ var CLIENT_RUNTIME = dedent2(
   export interface FetchLikeResponse {
     ok: boolean;
     status: number;
-    body?: ReadableStream<Uint8Array> | null;
+    body?: {
+      getReader(): {
+        read(): Promise<{ done: boolean; value?: Uint8Array }>;
+        cancel(): Promise<void>;
+      };
+    } | null;
+    headers?: {
+      get(name: string): string | null;
+    };
     json(): Promise<any>;
     text(): Promise<string>;
   }
@@ -1047,20 +1060,6 @@ var CLIENT_RUNTIME = dedent2(
   };
 
   /**
-   * Default reconnect config for streams.
-   */
-  const defaultReconnectConfig: ReconnectConfig = {
-    maxAttempts: 30,
-    initialDelayMs: 1000,
-    maxDelayMs: 30000,
-    delayMultiplier: 1.5,
-    jitter: 0.2,
-  };
-
-  /** Default maximum message size for streams: 4MB. */
-  const defaultMaxMessageSize = 4 * 1024 * 1024;
-
-  /**
    * Adds random jitter to a delay to prevent thundering herd effects.
    */
   function applyJitter(delayMs: number, jitterFactor: number): number {
@@ -1079,23 +1078,6 @@ var CLIENT_RUNTIME = dedent2(
    * Calculates exponential backoff delay for retry attempts.
    */
   function calculateBackoff(config: RetryConfig, attempt: number): number {
-    let delay = config.initialDelayMs;
-    for (let index = 1; index < attempt; index += 1) {
-      delay *= config.delayMultiplier;
-    }
-    if (delay > config.maxDelayMs) {
-      delay = config.maxDelayMs;
-    }
-    return applyJitter(delay, config.jitter);
-  }
-
-  /**
-   * Calculates exponential backoff delay for stream reconnection attempts.
-   */
-  function calculateReconnectBackoff(
-    config: ReconnectConfig,
-    attempt: number,
-  ): number {
     let delay = config.initialDelayMs;
     for (let index = 1; index < attempt; index += 1) {
       delay *= config.delayMultiplier;
@@ -1133,45 +1115,74 @@ var CLIENT_RUNTIME = dedent2(
   }
 
   /**
-   * Normalizes reconnect config input into safe runtime values.
+   * Default maximum response body size: 4 MiB.
    */
-  function normalizeReconnectConfig(
-    config: Partial<ReconnectConfig>,
-    defaultAttempts = 30,
-  ): ReconnectConfig {
-    return {
-      maxAttempts: Math.max(0, config.maxAttempts ?? defaultAttempts),
-      initialDelayMs: Math.max(
-        0,
-        config.initialDelayMs ?? defaultReconnectConfig.initialDelayMs,
-      ),
-      maxDelayMs: Math.max(
-        0,
-        config.maxDelayMs ?? defaultReconnectConfig.maxDelayMs,
-      ),
-      delayMultiplier: Math.max(
-        1,
-        config.delayMultiplier ?? defaultReconnectConfig.delayMultiplier,
-      ),
-      jitter: Math.max(
-        0,
-        Math.min(1, config.jitter ?? defaultReconnectConfig.jitter),
-      ),
-      ...(config.shouldReconnect
-        ? { shouldReconnect: config.shouldReconnect }
-        : {}),
-    };
-  }
-
-  // =============================================================================
-  // Internal Client
-  // =============================================================================
+  const defaultMaxResponseBodyBytes = 4 * 1024 * 1024;
 
   /**
-   * Core HTTP client engine used by generated VDL client wrappers.
+   * Reads a response body as text without exceeding the byte cap.
+   * Prefers the declared content length when present, then pumps the
+   * reader when available and falls back to text() otherwise.
+   */
+  async function readBoundedText(
+    response: FetchLikeResponse,
+    maxBytes: number,
+  ): Promise<string> {
+    const declared = response.headers?.get("content-length");
+    if (declared !== undefined && declared !== null && declared !== "") {
+      const parsed = Number.parseInt(declared, 10);
+      if (Number.isFinite(parsed) && parsed > maxBytes) {
+        throw new Error("Response body too large");
+      }
+    }
+
+    const reader = response.body?.getReader?.();
+    if (!reader) {
+      const text = await response.text();
+      if (new TextEncoder().encode(text).length > maxBytes) {
+        throw new Error("Response body too large");
+      }
+      return text;
+    }
+
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value) {
+          total += value.length;
+          if (total > maxBytes) {
+            throw new Error("Response body too large");
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // The stream may already be closed.
+      }
+    }
+
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return new TextDecoder().decode(merged);
+  }
+
+  /**
+   * Internal JSON-RPC client executing VPP-2 procedures.
    *
    * This class handles request execution, retry logic, timeout handling,
-   * stream connections, header providers, and interceptors.
+   * header providers, and interceptors.
    *
    * Do not instantiate directly. Use the generated client builder.
    *
@@ -1186,14 +1197,10 @@ var CLIENT_RUNTIME = dedent2(
 
     /**
      * Registry of valid operations.
-     * Structure: rpcName \u2192 operationName \u2192 OperationType
+     * Structure: rpcName -> procName -> ProcDefinition
      * Used to validate requests and fail fast on typos.
      */
-    private operationDefs: Map<string, Map<string, OperationDefinition>>;
-
-    // ---------------------------------------------------------------------------
-    // Dynamic Components
-    // ---------------------------------------------------------------------------
+    private operationDefs: Map<string, Map<string, ProcDefinition>>;
 
     /** Global header providers applied to all requests. */
     private headerProviders: HeaderProvider[] = [];
@@ -1210,17 +1217,13 @@ var CLIENT_RUNTIME = dedent2(
 
     private globalRetryConf: RetryConfig | null = null;
     private globalTimeoutConf: TimeoutConfig | null = null;
-    private globalReconnectConf: ReconnectConfig | null = null;
-    private globalMaxMessageSize: number = 0;
-
+    private maxResponseBodyBytes: number = defaultMaxResponseBodyBytes;
     // ---------------------------------------------------------------------------
     // Per-RPC Default Configurations
     // ---------------------------------------------------------------------------
 
     private rpcRetryConf: Map<string, RetryConfig> = new Map();
     private rpcTimeoutConf: Map<string, TimeoutConfig> = new Map();
-    private rpcReconnectConf: Map<string, ReconnectConfig> = new Map();
-    private rpcMaxMessageSize: Map<string, number> = new Map();
 
     // ---------------------------------------------------------------------------
     // Constructor
@@ -1234,14 +1237,14 @@ var CLIENT_RUNTIME = dedent2(
      */
     constructor(
       baseURL: string,
-      procDefs: OperationDefinition[],
-      streamDefs: OperationDefinition[],
+      procDefs: ProcDefinition[],
       opts: internalClientOption[],
     ) {
       this.verifyRuntimeDeps();
 
       this.baseURL = baseURL.replace(/[/]+$/gu, "");
       this.fetchFn = (globalThis.fetch ?? null) as FetchLike;
+      this.maxResponseBodyBytes = defaultMaxResponseBodyBytes;
       this.operationDefs = new Map();
 
       const ensureRPC = (rpcName: string) => {
@@ -1251,11 +1254,6 @@ var CLIENT_RUNTIME = dedent2(
       };
 
       for (const def of procDefs) {
-        ensureRPC(def.rpcName);
-        this.operationDefs.get(def.rpcName)?.set(def.name, def);
-      }
-
-      for (const def of streamDefs) {
         ensureRPC(def.rpcName);
         this.operationDefs.get(def.rpcName)?.set(def.name, def);
       }
@@ -1279,12 +1277,6 @@ var CLIENT_RUNTIME = dedent2(
 
       if (typeof AbortController !== "function") {
         missing.push("AbortController");
-      }
-      if (typeof ReadableStream === "undefined") {
-        missing.push("ReadableStream");
-      }
-      if (typeof TextDecoder !== "function") {
-        missing.push("TextDecoder");
       }
 
       if (missing.length > 0) {
@@ -1325,14 +1317,9 @@ var CLIENT_RUNTIME = dedent2(
       this.globalTimeoutConf = normalizeTimeoutConfig(conf);
     }
 
-    /** Sets the global default reconnect configuration for streams. */
-    setGlobalReconnectConfig(conf: ReconnectConfig): void {
-      this.globalReconnectConf = normalizeReconnectConfig(conf, conf.maxAttempts);
-    }
-
-    /** Sets the global default maximum message size for streams. */
-    setGlobalMaxMessageSize(size: number): void {
-      this.globalMaxMessageSize = size;
+    /** Caps response body bytes accepted per call. Values <= 0 restore the default. */
+    setMaxResponseBodyBytes(n: number): void {
+      this.maxResponseBodyBytes = n > 0 ? n : defaultMaxResponseBodyBytes;
     }
 
     // ---------------------------------------------------------------------------
@@ -1349,16 +1336,6 @@ var CLIENT_RUNTIME = dedent2(
       this.rpcTimeoutConf.set(rpcName, conf);
     }
 
-    /** Sets the default reconnect config for a specific RPC. */
-    setRPCReconnectConfig(rpcName: string, conf: ReconnectConfig) {
-      this.rpcReconnectConf.set(rpcName, conf);
-    }
-
-    /** Sets the default max message size for a specific RPC. */
-    setRPCMaxMessageSize(rpcName: string, size: number) {
-      this.rpcMaxMessageSize.set(rpcName, size);
-    }
-
     /** Adds a header provider for a specific RPC. */
     setRPCHeaderProvider(rpcName: string, provider: HeaderProvider) {
       if (!this.rpcHeaderProviders.has(rpcName)) {
@@ -1368,18 +1345,17 @@ var CLIENT_RUNTIME = dedent2(
     }
 
     /**
-     * Resolves one operation definition and verifies its expected kind.
+     * Resolves one procedure definition.
      */
     private getOperation(
       rpcName: string,
       operationName: string,
-      expectedType: OperationType,
-    ): OperationDefinition | undefined {
-      const operation = this.operationDefs.get(rpcName)?.get(operationName);
-      if (!operation || operation.type !== expectedType) {
+    ): ProcDefinition | undefined {
+      const proc = this.operationDefs.get(rpcName)?.get(operationName);
+      if (!proc) {
         return undefined;
       }
-      return operation;
+      return cloneProcDefinition(proc);
     }
 
     /**
@@ -1422,56 +1398,7 @@ var CLIENT_RUNTIME = dedent2(
     }
 
     /**
-     * Resolves the effective reconnect configuration for a stream.
-     * Priority: operation-level > RPC-level > global > built-in defaults.
-     */
-    private mergeReconnectConfig(
-      rpcName: string,
-      opConf?: ReconnectConfig,
-    ): ReconnectConfig {
-      return {
-        ...defaultReconnectConfig,
-        ...(this.globalReconnectConf ?? {}),
-        ...(this.rpcReconnectConf.get(rpcName) ?? {}),
-        ...(opConf ?? {}),
-        ...(opConf?.shouldReconnect
-          ? { shouldReconnect: opConf.shouldReconnect }
-          : this.rpcReconnectConf.get(rpcName)?.shouldReconnect
-            ? {
-                shouldReconnect:
-                  this.rpcReconnectConf.get(rpcName)?.shouldReconnect,
-              }
-          : this.globalReconnectConf?.shouldReconnect
-            ? { shouldReconnect: this.globalReconnectConf.shouldReconnect }
-            : {}),
-      };
-    }
-
-    /**
-     * Resolves the effective maximum message size for a stream.
-     * Priority: operation-level > RPC-level > global > built-in defaults.
-     */
-    private mergeMaxMessageSize(rpcName: string, opSize?: number): number {
-      if (opSize && opSize > 0) {
-        return opSize;
-      }
-
-      if (this.rpcMaxMessageSize.has(rpcName)) {
-        const rpcSize = this.rpcMaxMessageSize.get(rpcName);
-        if (rpcSize && rpcSize > 0) {
-          return rpcSize;
-        }
-      }
-
-      if (this.globalMaxMessageSize > 0) {
-        return this.globalMaxMessageSize;
-      }
-
-      return defaultMaxMessageSize;
-    }
-
-    /**
-     * Applies all header providers to a request's headers.
+     * Applies all header providers to a request headers.
      * Order: global providers -> RPC providers -> operation providers.
      */
     private async applyHeaders(
@@ -1524,20 +1451,6 @@ var CLIENT_RUNTIME = dedent2(
     }
 
     /**
-     * Evaluates whether the current stream failure should trigger reconnect.
-     */
-    private async shouldReconnect(
-      config: ReconnectConfig,
-      context: ReconnectDecisionContext,
-    ): Promise<boolean> {
-      if (!config.shouldReconnect) {
-        return context.defaultReconnectable;
-      }
-
-      return await config.shouldReconnect(context);
-    }
-
-    /**
      * Executes one procedure call with retries, timeout, headers, and interceptors.
      */
     async callProc(
@@ -1560,7 +1473,7 @@ var CLIENT_RUNTIME = dedent2(
         };
       }
 
-      const operation = this.getOperation(rpcName, procName, "proc");
+      const operation = this.getOperation(rpcName, procName);
       const reqInfo: RequestInfo = {
         rpcName,
         operationName: procName,
@@ -1608,7 +1521,7 @@ var CLIENT_RUNTIME = dedent2(
 
         const retryConf = this.mergeRetryConfig(req.rpcName, opRetryConf);
         const timeoutConf = this.mergeTimeoutConfig(req.rpcName, opTimeoutConf);
-        const url = this.baseURL + "/" + req.rpcName + "/" + req.operationName;
+        const url = this.baseURL + (operation.path as string);
         let lastError: VdlError | null = null;
 
         for (let attempt = 1; attempt <= retryConf.maxAttempts; attempt += 1) {
@@ -1657,6 +1570,32 @@ var CLIENT_RUNTIME = dedent2(
               body: payload,
               signal: abortController.signal,
             });
+
+            if (!fetchResponse) {
+              const error = new VdlError({
+                message: "Empty response from transport",
+                category: "HTTPError",
+                code: "BAD_RESPONSE",
+              });
+              const canRetry =
+                attempt < retryConf.maxAttempts &&
+                (await this.shouldRetry(retryConf, {
+                  attempt,
+                  maxAttempts: retryConf.maxAttempts,
+                  error,
+                  input,
+                  operation,
+                  defaultRetryable: true,
+                }));
+
+              if (canRetry) {
+                lastError = error;
+                await sleep(calculateBackoff(retryConf, attempt));
+                continue;
+              }
+
+              return { ok: false, error };
+            }
 
             if (timeoutId !== undefined) {
               clearTimeout(timeoutId);
@@ -1720,7 +1659,11 @@ var CLIENT_RUNTIME = dedent2(
             }
 
             try {
-              const json = (await fetchResponse.json()) as
+              const rawText = await readBoundedText(
+                fetchResponse,
+                this.maxResponseBodyBytes,
+              );
+              const json = JSON.parse(rawText) as
                 | Response<any>
                 | {
                     ok: false;
@@ -1760,11 +1703,22 @@ var CLIENT_RUNTIME = dedent2(
 
               return json;
             } catch (error) {
-              const decodeError = new VdlError({
-                message: "Failed to decode VDL response: " + String(error),
-                category: "ClientError",
-                code: "DECODE_RESPONSE",
-              });
+              const tooLarge =
+                String((error as Error)?.message ?? error).includes(
+                  "body too large",
+                ) ||
+                String(error).includes("body too large");
+              const decodeError = tooLarge
+                ? new VdlError({
+                    message: "Response body too large",
+                    category: "HTTPError",
+                    code: "BODY_TOO_LARGE",
+                  })
+                : new VdlError({
+                    message: "Failed to decode response: " + String(error),
+                    category: "ClientError",
+                    code: "DECODE_RESPONSE",
+                  });
               const canRetry =
                 attempt < retryConf.maxAttempts &&
                 (await this.shouldRetry(retryConf, {
@@ -1846,379 +1800,10 @@ var CLIENT_RUNTIME = dedent2(
 
       return this.executeChain(reqInfo, invoker) as Promise<Response<any>>;
     }
-
-    /**
-     * Opens one stream subscription and returns an async event generator plus a cancel handle.
-     */
-    callStream(
-      rpcName: string,
-      streamName: string,
-      input: unknown,
-      opHeaderProviders: HeaderProvider[],
-      opReconnectConf?: ReconnectConfig,
-      opMaxMessageSize?: number,
-      onConnect?: () => void,
-      onDisconnect?: (error: Error | null) => void,
-      onReconnect?: (attempt: number, delayMs: number) => void,
-      opSignal?: AbortSignal,
-    ): {
-      stream: AsyncGenerator<Response<any>, void, unknown>;
-      cancel: () => void;
-    } {
-      const operation = this.getOperation(rpcName, streamName, "stream");
-      const reqInfo: RequestInfo = {
-        rpcName,
-        operationName: streamName,
-        input,
-        type: "stream",
-        operation,
-      };
-      const self = this;
-      let isCancelled = false;
-      let currentAbortController: AbortController | null = null;
-
-      const cancel = () => {
-        isCancelled = true;
-        currentAbortController?.abort();
-      };
-
-      const onExternalAbort = () => {
-        isCancelled = true;
-        currentAbortController?.abort();
-      };
-
-      if (opSignal?.aborted) {
-        isCancelled = true;
-      }
-
-      async function* generator(): AsyncGenerator<Response<any>, void, unknown> {
-        let finalError: VdlError | null = null;
-        if (opSignal && !opSignal.aborted) {
-          opSignal.addEventListener("abort", onExternalAbort);
-        }
-
-        try {
-          if (!operation) {
-            yield {
-              ok: false,
-              error: new VdlError({
-                message:
-                  rpcName + "." + streamName + " stream not found in schema",
-                category: "ClientError",
-                code: "INVALID_STREAM",
-                details: { rpc: rpcName, stream: streamName },
-              }),
-            };
-            return;
-          }
-
-          let payload: string;
-          try {
-            payload = input == null ? "{}" : JSON.stringify(input);
-          } catch (error) {
-            finalError = asError(error);
-            yield { ok: false, error: asError(finalError) };
-            return;
-          }
-
-          const reconnectConf = self.mergeReconnectConfig(
-            rpcName,
-            opReconnectConf,
-          );
-          const maxMessageSize = self.mergeMaxMessageSize(
-            rpcName,
-            opMaxMessageSize,
-          );
-          const url = self.baseURL + "/" + rpcName + "/" + streamName;
-          let reconnectAttempt = 0;
-
-          while (!isCancelled) {
-            currentAbortController = new AbortController();
-
-            try {
-              const headers: Record<string, string> = {
-                "content-type": "application/json",
-                accept: "text/event-stream",
-              };
-
-              await self.applyHeaders(rpcName, headers, opHeaderProviders);
-
-              const fetchResponse = await self.fetchFn(url, {
-                method: "POST",
-                headers,
-                body: payload,
-                signal: currentAbortController.signal,
-              });
-
-              if (fetchResponse.status >= 500) {
-                const error = new VdlError({
-                  message:
-                    "Unexpected HTTP status: " + String(fetchResponse.status),
-                  category: "HTTPError",
-                  code: "BAD_STATUS",
-                  details: { status: fetchResponse.status },
-                });
-                const delayMs = calculateReconnectBackoff(
-                  reconnectConf,
-                  reconnectAttempt + 1,
-                );
-                const canReconnect =
-                  reconnectAttempt < reconnectConf.maxAttempts &&
-                  (await self.shouldReconnect(reconnectConf, {
-                    attempt: reconnectAttempt + 1,
-                    maxAttempts: reconnectConf.maxAttempts,
-                    error,
-                    input,
-                    operation,
-                    delayMs,
-                    defaultReconnectable: true,
-                  }));
-
-                if (canReconnect) {
-                  onReconnect?.(reconnectAttempt + 1, delayMs);
-                  reconnectAttempt += 1;
-                  await sleep(delayMs);
-                  continue;
-                }
-
-                finalError = error;
-                yield { ok: false, error };
-                return;
-              }
-
-              if (!fetchResponse.ok) {
-                const error = new VdlError({
-                  message:
-                    "Unexpected HTTP status: " + String(fetchResponse.status),
-                  category: "HTTPError",
-                  code: "BAD_STATUS",
-                  details: { status: fetchResponse.status },
-                });
-                const delayMs = calculateReconnectBackoff(
-                  reconnectConf,
-                  reconnectAttempt + 1,
-                );
-                const canReconnect =
-                  reconnectAttempt < reconnectConf.maxAttempts &&
-                  (await self.shouldReconnect(reconnectConf, {
-                    attempt: reconnectAttempt + 1,
-                    maxAttempts: reconnectConf.maxAttempts,
-                    error,
-                    input,
-                    operation,
-                    delayMs,
-                    defaultReconnectable: false,
-                  }));
-
-                if (canReconnect) {
-                  onReconnect?.(reconnectAttempt + 1, delayMs);
-                  reconnectAttempt += 1;
-                  await sleep(delayMs);
-                  continue;
-                }
-
-                finalError = error;
-                yield { ok: false, error };
-                return;
-              }
-
-              if (!fetchResponse.body) {
-                const error = new VdlError({
-                  message: "Missing response body for stream",
-                  category: "ConnectionError",
-                  code: "STREAM_CONNECT_FAILED",
-                });
-                finalError = error;
-                yield { ok: false, error };
-                return;
-              }
-
-              onConnect?.();
-              reconnectAttempt = 0;
-
-              const reader = fetchResponse.body.getReader();
-              const decoder = new TextDecoder();
-              let buffer = "";
-
-              try {
-                while (!isCancelled) {
-                  const { done, value } = await reader.read();
-                  if (done) {
-                    break;
-                  }
-
-                  buffer += decoder.decode(value, { stream: true });
-
-                  let separatorIndex = buffer.indexOf("\\n\\n");
-                  while (separatorIndex >= 0) {
-                    const chunk = buffer.slice(0, separatorIndex).trim();
-                    buffer = buffer.slice(separatorIndex + 2);
-
-                    if (chunk === "" || chunk.startsWith(":")) {
-                      separatorIndex = buffer.indexOf("\\n\\n");
-                      continue;
-                    }
-
-                    if (chunk.startsWith("data:")) {
-                      const payloadText = chunk.slice(5).trim();
-                      if (payloadText.length > maxMessageSize) {
-                        finalError = new VdlError({
-                          message:
-                            "Stream message exceeded maximum size of " +
-                            String(maxMessageSize) +
-                            " bytes",
-                          category: "ProtocolError",
-                          code: "MESSAGE_TOO_LARGE",
-                        });
-                        yield { ok: false, error: asError(finalError) };
-                        return;
-                      }
-
-                      try {
-                        const event = JSON.parse(payloadText) as
-                          | Response<any>
-                          | {
-                              ok: false;
-                              error: {
-                                message?: string;
-                                category?: string;
-                                code?: string;
-                                details?: Record<string, unknown>;
-                              };
-                            };
-                        if (!event.ok) {
-                          yield {
-                            ok: false,
-                            error: new VdlError({
-                              message: event.error.message ?? "Unknown error",
-                              category: event.error.category,
-                              code: event.error.code,
-                              details: event.error.details,
-                            }),
-                          };
-                        } else {
-                          yield event;
-                        }
-                      } catch (error) {
-                        finalError = new VdlError({
-                          message:
-                            "Received invalid SSE payload: " + String(error),
-                          category: "ProtocolError",
-                          code: "INVALID_PAYLOAD",
-                        });
-                        yield { ok: false, error: asError(finalError) };
-                        return;
-                      }
-                    }
-
-                    if (buffer.length > maxMessageSize) {
-                      finalError = new VdlError({
-                        message:
-                          "Stream message accumulation exceeded maximum size of " +
-                          String(maxMessageSize) +
-                          " bytes",
-                        category: "ProtocolError",
-                        code: "MESSAGE_TOO_LARGE",
-                      });
-                      yield { ok: false, error: asError(finalError) };
-                      return;
-                    }
-
-                    separatorIndex = buffer.indexOf("\\n\\n");
-                  }
-                }
-
-                return;
-              } catch (error) {
-                const normalizedError = asError(error);
-                const delayMs = calculateReconnectBackoff(
-                  reconnectConf,
-                  reconnectAttempt + 1,
-                );
-                const canReconnect =
-                  !isCancelled &&
-                  reconnectAttempt < reconnectConf.maxAttempts &&
-                  (await self.shouldReconnect(reconnectConf, {
-                    attempt: reconnectAttempt + 1,
-                    maxAttempts: reconnectConf.maxAttempts,
-                    error: normalizedError,
-                    input,
-                    operation,
-                    delayMs,
-                    defaultReconnectable: true,
-                  }));
-
-                if (canReconnect) {
-                  onReconnect?.(reconnectAttempt + 1, delayMs);
-                  reconnectAttempt += 1;
-                  await sleep(delayMs);
-                  continue;
-                }
-
-                finalError = normalizedError;
-                yield { ok: false, error: normalizedError };
-                return;
-              }
-            } catch (error) {
-              const normalizedError = asError(error);
-              const delayMs = calculateReconnectBackoff(
-                reconnectConf,
-                reconnectAttempt + 1,
-              );
-              const canReconnect =
-                !isCancelled &&
-                reconnectAttempt < reconnectConf.maxAttempts &&
-                (await self.shouldReconnect(reconnectConf, {
-                  attempt: reconnectAttempt + 1,
-                  maxAttempts: reconnectConf.maxAttempts,
-                  error: normalizedError,
-                  input,
-                  operation,
-                  delayMs,
-                  defaultReconnectable: true,
-                }));
-
-              if (canReconnect) {
-                onReconnect?.(reconnectAttempt + 1, delayMs);
-                reconnectAttempt += 1;
-                await sleep(delayMs);
-                continue;
-              }
-
-              finalError = normalizedError;
-              if (!isCancelled) {
-                yield { ok: false, error: normalizedError };
-              }
-              return;
-            }
-          }
-        } finally {
-          opSignal?.removeEventListener("abort", onExternalAbort);
-          onDisconnect?.(finalError);
-        }
-      }
-
-      const wrappedGenerator = async function* () {
-        const result = await self.executeChain(reqInfo, async () => ({
-          ok: true,
-          output: null,
-        }));
-        if (!result.ok) {
-          yield result;
-          return;
-        }
-        yield* generator();
-      };
-
-      return {
-        stream: wrappedGenerator(),
-        cancel,
-      };
-    }
   }
 
   /**
-   * Internal mutator applied while building an internalClient instance.
+   * Internal client option applied during client construction.
    */
   type internalClientOption = (client: internalClient) => void;
 
@@ -2255,16 +1840,9 @@ var CLIENT_RUNTIME = dedent2(
     return (client) => client.setGlobalTimeoutConfig(conf);
   }
 
-  /** Creates an option that sets the global reconnect policy. */
-  function withGlobalReconnectConfig(
-    conf: ReconnectConfig,
-  ): internalClientOption {
-    return (client) => client.setGlobalReconnectConfig(conf);
-  }
-
-  /** Creates an option that sets the global maximum stream message size. */
-  function withGlobalMaxMessageSize(size: number): internalClientOption {
-    return (client) => client.setGlobalMaxMessageSize(size);
+  /** Creates an option that caps response body bytes accepted per call. */
+  function withMaxResponseBodyBytes(n: number): internalClientOption {
+    return (client) => client.setMaxResponseBodyBytes(n);
   }
 
   /**
@@ -2272,19 +1850,13 @@ var CLIENT_RUNTIME = dedent2(
    */
   class clientBuilder {
     private readonly baseURL: string;
-    private readonly procDefs: OperationDefinition[];
-    private readonly streamDefs: OperationDefinition[];
+    private readonly procDefs: ProcDefinition[];
     private readonly opts: internalClientOption[] = [];
 
-    /** Creates a new builder bound to the generated operation catalogs. */
-    constructor(
-      baseURL: string,
-      procDefs: OperationDefinition[],
-      streamDefs: OperationDefinition[],
-    ) {
+    /** Creates a new builder bound to the generated operation catalog. */
+    constructor(baseURL: string, procDefs: ProcDefinition[]) {
       this.baseURL = baseURL;
       this.procDefs = procDefs;
-      this.streamDefs = streamDefs;
     }
 
     /** Overrides the fetch implementation used by the internal client. */
@@ -2323,26 +1895,15 @@ var CLIENT_RUNTIME = dedent2(
       return this;
     }
 
-    /** Sets the global reconnect policy default. */
-    withGlobalReconnectConfig(conf: ReconnectConfig): clientBuilder {
-      this.opts.push(withGlobalReconnectConfig(conf));
-      return this;
-    }
-
-    /** Sets the global maximum stream message size default. */
-    withGlobalMaxMessageSize(size: number): clientBuilder {
-      this.opts.push(withGlobalMaxMessageSize(size));
+    /** Caps response body bytes accepted per call. Values <= 0 restore the default. */
+    withMaxResponseBodyBytes(n: number): clientBuilder {
+      this.opts.push(withMaxResponseBodyBytes(n));
       return this;
     }
 
     /** Builds the final internal client instance. */
     build(): internalClient {
-      return new internalClient(
-        this.baseURL,
-        this.procDefs,
-        this.streamDefs,
-        this.opts,
-      );
+      return new internalClient(this.baseURL, this.procDefs, this.opts);
     }
   }
 `
@@ -2370,7 +1931,7 @@ function generateClientFile(context) {
 __name(generateClientFile, "generateClientFile");
 function renderClientFacade(g, context) {
   writeDocComment(g, {
-    fallback: "Creates a new VDL RPC client builder."
+    fallback: "Creates a new VDL HTTP RPC client builder."
   });
   g.line("export function NewClient(baseURL: string): ClientBuilder {");
   g.block(() => {
@@ -2387,9 +1948,7 @@ function renderClientFacade(g, context) {
     g.break();
     g.line("constructor(baseURL: string) {");
     g.block(() => {
-      g.line(
-        "this.builder = new clientBuilder(baseURL, VDLProcedures, VDLStreams);"
-      );
+      g.line("this.builder = new clientBuilder(baseURL, VDLProcs);");
     });
     g.line("}");
     g.break();
@@ -2454,21 +2013,11 @@ function renderClientFacade(g, context) {
     g.line("}");
     g.break();
     writeDocComment(g, {
-      fallback: "Sets the global default reconnect policy for generated streams."
+      fallback: "Caps response body bytes accepted per call. Values <= 0 restore the 4 MiB default."
     });
-    g.line("withGlobalReconnectConfig(conf: ReconnectConfig): ClientBuilder {");
+    g.line("withMaxResponseBodyBytes(n: number): ClientBuilder {");
     g.block(() => {
-      g.line("this.builder.withGlobalReconnectConfig(conf);");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Sets the global maximum stream message size."
-    });
-    g.line("withGlobalMaxMessageSize(size: number): ClientBuilder {");
-    g.block(() => {
-      g.line("this.builder.withGlobalMaxMessageSize(size);");
+      g.line("this.builder.withMaxResponseBodyBytes(n);");
       g.line("return this;");
     });
     g.line("}");
@@ -2485,21 +2034,19 @@ function renderClientFacade(g, context) {
   g.line("}");
   g.break();
   writeDocComment(g, {
-    fallback: "Main VDL RPC client exposing typed access to generated procedures and streams."
+    fallback: "Main VDL HTTP RPC client exposing typed access to generated procedures."
   });
   g.line("export class Client {");
   g.block(() => {
     g.line("private readonly intClient: internalClient;");
     g.line("public readonly rpcs: ClientRPCRegistry;");
     g.line("public readonly procs: ProcRegistry;");
-    g.line("public readonly streams: StreamRegistry;");
     g.break();
     g.line("constructor(intClient: internalClient) {");
     g.block(() => {
       g.line("this.intClient = intClient;");
       g.line("this.rpcs = new ClientRPCRegistry(intClient);");
       g.line("this.procs = new ProcRegistry(intClient);");
-      g.line("this.streams = new StreamRegistry(intClient);");
     });
     g.line("}");
   });
@@ -2507,12 +2054,11 @@ function renderClientFacade(g, context) {
   g.break();
   renderRPCRegistry(g, context);
   renderProcedureRegistry(g, context);
-  renderStreamRegistry(g, context);
 }
 __name(renderClientFacade, "renderClientFacade");
 function renderRPCRegistry(g, context) {
   writeDocComment(g, {
-    fallback: "Registry exposing every generated RPC service."
+    fallback: "Registry exposing every generated HTTP RPC service."
   });
   g.line("class ClientRPCRegistry {");
   g.block(() => {
@@ -2540,7 +2086,6 @@ function renderRPCRegistry(g, context) {
   for (const service of context.services) {
     renderRPCClientClass(g, service);
     renderRPCProcedureRegistry(g, service);
-    renderRPCStreamRegistry(g, service);
   }
 }
 __name(renderRPCRegistry, "renderRPCRegistry");
@@ -2554,13 +2099,11 @@ function renderRPCClientClass(g, service) {
   g.block(() => {
     g.line("private readonly intClient: internalClient;");
     g.line(`public readonly procs: Client${service.name}Procs;`);
-    g.line(`public readonly streams: Client${service.name}Streams;`);
     g.break();
     g.line("constructor(intClient: internalClient) {");
     g.block(() => {
       g.line("this.intClient = intClient;");
       g.line(`this.procs = new Client${service.name}Procs(intClient);`);
-      g.line(`this.streams = new Client${service.name}Streams(intClient);`);
     });
     g.line("}");
     g.break();
@@ -2588,6 +2131,18 @@ function renderRPCClientClass(g, service) {
       g.line(
         `this.intClient.setRPCHeaderProvider(${JSON.stringify(service.name)}, provider);`
       );
+      g.line("return this;");
+    });
+    g.line("}");
+    g.break();
+    writeDocComment(g, {
+      fallback: `Adds an interceptor for every ${service.name} request.`
+    });
+    g.line(
+      `withInterceptor(interceptor: Interceptor): Client${service.name}RPC {`
+    );
+    g.block(() => {
+      g.line("this.intClient.addInterceptor(interceptor);");
       g.line("return this;");
     });
     g.line("}");
@@ -2646,45 +2201,17 @@ function renderRPCClientClass(g, service) {
     });
     g.line("}");
     g.break();
-    writeDocComment(g, {
-      fallback: `Sets the default reconnect policy for streams in ${service.name}.`
-    });
-    g.line(
-      `withReconnect(config: Partial<ReconnectConfig>): Client${service.name}RPC {`
-    );
-    g.block(() => {
+    for (const procedure of service.procs) {
+      writeDocComment(g, {
+        doc: procedure.doc,
+        annotations: procedure.annotations,
+        fallback: `Creates a call builder for ${service.name}.${procedure.name}.`
+      });
       g.line(
-        `this.intClient.setRPCReconnectConfig(${JSON.stringify(service.name)}, normalizeReconnectConfig(config, 5));`
+        `${procedure.serverMethodName}(): Proc${procedure.rpcName}${procedure.name}Builder { return new Proc${procedure.rpcName}${procedure.name}Builder(this.intClient, ${JSON.stringify(procedure.rpcName)}, ${JSON.stringify(procedure.name)}); }`
       );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: `Sets the exact reconnect configuration for streams in ${service.name}.`
-    });
-    g.line(
-      `withReconnectConfig(config: ReconnectConfig): Client${service.name}RPC {`
-    );
-    g.block(() => {
-      g.line(
-        `this.intClient.setRPCReconnectConfig(${JSON.stringify(service.name)}, normalizeReconnectConfig(config, config.maxAttempts));`
-      );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: `Sets the default maximum stream message size for ${service.name}.`
-    });
-    g.line(`withMaxMessageSize(size: number): Client${service.name}RPC {`);
-    g.block(() => {
-      g.line(
-        `this.intClient.setRPCMaxMessageSize(${JSON.stringify(service.name)}, size);`
-      );
-      g.line("return this;");
-    });
-    g.line("}");
+      g.break();
+    }
   });
   g.line("}");
   g.break();
@@ -2703,7 +2230,7 @@ function renderRPCProcedureRegistry(g, service) {
     });
     g.line("}");
     g.break();
-    for (const procedure of service.procedures) {
+    for (const procedure of service.procs) {
       writeDocComment(g, {
         doc: procedure.doc,
         annotations: procedure.annotations,
@@ -2719,35 +2246,6 @@ function renderRPCProcedureRegistry(g, service) {
   g.break();
 }
 __name(renderRPCProcedureRegistry, "renderRPCProcedureRegistry");
-function renderRPCStreamRegistry(g, service) {
-  writeDocComment(g, {
-    fallback: `Registry exposing every generated stream builder for ${service.name}.`
-  });
-  g.line(`class Client${service.name}Streams {`);
-  g.block(() => {
-    g.line("private readonly intClient: internalClient;");
-    g.line("constructor(intClient: internalClient) {");
-    g.block(() => {
-      g.line("this.intClient = intClient;");
-    });
-    g.line("}");
-    g.break();
-    for (const stream of service.streams) {
-      writeDocComment(g, {
-        doc: stream.doc,
-        annotations: stream.annotations,
-        fallback: `Creates a stream builder for ${service.name}.${stream.name}.`
-      });
-      g.line(
-        `${stream.serverMethodName}(): Stream${stream.rpcName}${stream.name}Builder { return new Stream${stream.rpcName}${stream.name}Builder(this.intClient, ${JSON.stringify(stream.rpcName)}, ${JSON.stringify(stream.name)}); }`
-      );
-      g.break();
-    }
-  });
-  g.line("}");
-  g.break();
-}
-__name(renderRPCStreamRegistry, "renderRPCStreamRegistry");
 function renderProcedureRegistry(g, context) {
   writeDocComment(g, {
     fallback: "Registry exposing every generated procedure builder."
@@ -2761,7 +2259,7 @@ function renderProcedureRegistry(g, context) {
     });
     g.line("}");
     g.break();
-    for (const procedure of context.procedures) {
+    for (const procedure of context.procs) {
       writeDocComment(g, {
         doc: procedure.doc,
         annotations: procedure.annotations,
@@ -2775,43 +2273,11 @@ function renderProcedureRegistry(g, context) {
   });
   g.line("}");
   g.break();
-  for (const procedure of context.procedures) {
+  for (const procedure of context.procs) {
     renderProcedureBuilder(g, procedure);
   }
 }
 __name(renderProcedureRegistry, "renderProcedureRegistry");
-function renderStreamRegistry(g, context) {
-  writeDocComment(g, {
-    fallback: "Registry exposing every generated stream builder."
-  });
-  g.line("class StreamRegistry {");
-  g.block(() => {
-    g.line("private readonly intClient: internalClient;");
-    g.line("constructor(intClient: internalClient) {");
-    g.block(() => {
-      g.line("this.intClient = intClient;");
-    });
-    g.line("}");
-    g.break();
-    for (const stream of context.streams) {
-      writeDocComment(g, {
-        doc: stream.doc,
-        annotations: stream.annotations,
-        fallback: `Creates a stream builder for ${stream.rpcName}.${stream.name}.`
-      });
-      g.line(
-        `${stream.clientMethodName}(): Stream${stream.rpcName}${stream.name}Builder { return new Stream${stream.rpcName}${stream.name}Builder(this.intClient, ${JSON.stringify(stream.rpcName)}, ${JSON.stringify(stream.name)}); }`
-      );
-      g.break();
-    }
-  });
-  g.line("}");
-  g.break();
-  for (const stream of context.streams) {
-    renderStreamBuilder(g, stream);
-  }
-}
-__name(renderStreamRegistry, "renderStreamRegistry");
 function renderRuntimeTypeReference(typeName) {
   return typeName ? `vdlTypes.${typeName}` : "Void";
 }
@@ -2820,13 +2286,13 @@ function renderRuntimeHelperReference(typeName) {
   return typeName ? `vdlTypes.${typeName}` : "Void";
 }
 __name(renderRuntimeHelperReference, "renderRuntimeHelperReference");
-function renderProcedureBuilder(g, operation) {
-  const inputType = renderRuntimeTypeReference(operation.inputTypeName);
-  const outputType = renderRuntimeTypeReference(operation.outputTypeName);
-  const inputHelper = renderRuntimeHelperReference(operation.inputTypeName);
-  const outputHelper = renderRuntimeHelperReference(operation.outputTypeName);
-  const executeSignature = operation.inputTypeName ? `async execute(input: ${inputType}): Promise<${outputType}>` : `async execute(input: Void = {}): Promise<${outputType}>`;
-  g.line(`class Proc${operation.rpcName}${operation.name}Builder {`);
+function renderProcedureBuilder(g, proc) {
+  const inputType = renderRuntimeTypeReference(proc.inputTypeName);
+  const outputType = renderRuntimeTypeReference(proc.outputTypeName);
+  const inputHelper = renderRuntimeHelperReference(proc.inputTypeName);
+  const outputHelper = renderRuntimeHelperReference(proc.outputTypeName);
+  const executeSignature = proc.inputTypeName ? `async execute(input: ${inputType}): Promise<${outputType}>` : `async execute(input: Void = {}): Promise<${outputType}>`;
+  g.line(`class Proc${proc.rpcName}${proc.name}Builder {`);
   g.block(() => {
     g.line("private readonly intClient: internalClient;");
     g.line("private readonly rpcName: string;");
@@ -2850,7 +2316,7 @@ function renderProcedureBuilder(g, operation) {
       fallback: "Adds a static header to this procedure call."
     });
     g.line(
-      `withHeader(key: string, value: string): Proc${operation.rpcName}${operation.name}Builder {`
+      `withHeader(key: string, value: string): Proc${proc.rpcName}${proc.name}Builder {`
     );
     g.block(() => {
       g.line(
@@ -2864,7 +2330,7 @@ function renderProcedureBuilder(g, operation) {
       fallback: "Adds a dynamic header provider to this procedure call. The provider runs on every attempt, including retries."
     });
     g.line(
-      `withHeaderProvider(provider: HeaderProvider): Proc${operation.rpcName}${operation.name}Builder {`
+      `withHeaderProvider(provider: HeaderProvider): Proc${proc.rpcName}${proc.name}Builder {`
     );
     g.block(() => {
       g.line("this.headerProviders.push(provider);");
@@ -2873,10 +2339,10 @@ function renderProcedureBuilder(g, operation) {
     g.line("}");
     g.break();
     writeDocComment(g, {
-      fallback: "Configures retry behavior for this procedure call. The optional shouldRetry callback receives the resolved operation metadata, including annotations."
+      fallback: "Configures retry behavior for this procedure call. The optional shouldRetry callback receives the resolved proc metadata, including annotations."
     });
     g.line(
-      `withRetries(config: Partial<RetryConfig>): Proc${operation.rpcName}${operation.name}Builder {`
+      `withRetries(config: Partial<RetryConfig>): Proc${proc.rpcName}${proc.name}Builder {`
     );
     g.block(() => {
       g.line("this.retryConfig = normalizeRetryConfig(config, 3);");
@@ -2888,7 +2354,7 @@ function renderProcedureBuilder(g, operation) {
       fallback: "Sets the exact retry configuration for this procedure call, including max attempts."
     });
     g.line(
-      `withRetryConfig(config: RetryConfig): Proc${operation.rpcName}${operation.name}Builder {`
+      `withRetryConfig(config: RetryConfig): Proc${proc.rpcName}${proc.name}Builder {`
     );
     g.block(() => {
       g.line(
@@ -2902,7 +2368,7 @@ function renderProcedureBuilder(g, operation) {
       fallback: "Configures timeout behavior for this procedure call."
     });
     g.line(
-      `withTimeout(config: Partial<TimeoutConfig>): Proc${operation.rpcName}${operation.name}Builder {`
+      `withTimeout(config: Partial<TimeoutConfig>): Proc${proc.rpcName}${proc.name}Builder {`
     );
     g.block(() => {
       g.line("this.timeoutConfig = normalizeTimeoutConfig(config);");
@@ -2914,7 +2380,7 @@ function renderProcedureBuilder(g, operation) {
       fallback: "Sets the exact timeout configuration for this procedure call."
     });
     g.line(
-      `withTimeoutConfig(config: TimeoutConfig): Proc${operation.rpcName}${operation.name}Builder {`
+      `withTimeoutConfig(config: TimeoutConfig): Proc${proc.rpcName}${proc.name}Builder {`
     );
     g.block(() => {
       g.line("this.timeoutConfig = normalizeTimeoutConfig(config);");
@@ -2926,7 +2392,7 @@ function renderProcedureBuilder(g, operation) {
       fallback: "Sets an external AbortSignal used to cancel this procedure call."
     });
     g.line(
-      `withSignal(signal: AbortSignal): Proc${operation.rpcName}${operation.name}Builder {`
+      `withSignal(signal: AbortSignal): Proc${proc.rpcName}${proc.name}Builder {`
     );
     g.block(() => {
       g.line("this.signal = signal;");
@@ -2935,9 +2401,9 @@ function renderProcedureBuilder(g, operation) {
     g.line("}");
     g.break();
     writeDocComment(g, {
-      doc: operation.doc,
-      annotations: operation.annotations,
-      fallback: `Executes ${operation.rpcName}.${operation.name}.`
+      doc: proc.doc,
+      annotations: proc.annotations,
+      fallback: `Executes ${proc.rpcName}.${proc.name}.`
     });
     g.line(`${executeSignature} {`);
     g.block(() => {
@@ -2967,227 +2433,6 @@ function renderProcedureBuilder(g, operation) {
   g.break();
 }
 __name(renderProcedureBuilder, "renderProcedureBuilder");
-function renderStreamBuilder(g, operation) {
-  const inputType = renderRuntimeTypeReference(operation.inputTypeName);
-  const outputType = renderRuntimeTypeReference(operation.outputTypeName);
-  const inputHelper = renderRuntimeHelperReference(operation.inputTypeName);
-  const outputHelper = renderRuntimeHelperReference(operation.outputTypeName);
-  const responseType = operation.streamResponseTypeName;
-  const executeSignature = operation.inputTypeName ? `execute(input: ${inputType})` : `execute(input: Void = {})`;
-  writeDocComment(g, {
-    doc: operation.doc,
-    annotations: operation.annotations,
-    fallback: `Typed stream event envelope yielded by ${operation.rpcName}.${operation.name}.`
-  });
-  g.line(`export type ${responseType} = Response<${outputType}>;`);
-  g.break();
-  g.line(`class Stream${operation.rpcName}${operation.name}Builder {`);
-  g.block(() => {
-    g.line("private readonly intClient: internalClient;");
-    g.line("private readonly rpcName: string;");
-    g.line("private readonly streamName: string;");
-    g.line("private readonly headerProviders: HeaderProvider[] = [];");
-    g.line("private reconnectConfig?: ReconnectConfig;");
-    g.line("private maxMessageSize = 0;");
-    g.line("private onConnectCb?: () => void;");
-    g.line("private onDisconnectCb?: (error: Error | null) => void;");
-    g.line(
-      "private onReconnectCb?: (attempt: number, delayMs: number) => void;"
-    );
-    g.line("private signal?: AbortSignal;");
-    g.break();
-    g.line(
-      "constructor(intClient: internalClient, rpcName: string, streamName: string) {"
-    );
-    g.block(() => {
-      g.line("this.intClient = intClient;");
-      g.line("this.rpcName = rpcName;");
-      g.line("this.streamName = streamName;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Adds a static header to this stream subscription."
-    });
-    g.line(
-      `withHeader(key: string, value: string): Stream${operation.rpcName}${operation.name}Builder {`
-    );
-    g.block(() => {
-      g.line(
-        "this.headerProviders.push((headers) => { headers[key] = value; });"
-      );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Adds a dynamic header provider to this stream subscription. The provider runs again for every reconnect attempt."
-    });
-    g.line(
-      `withHeaderProvider(provider: HeaderProvider): Stream${operation.rpcName}${operation.name}Builder {`
-    );
-    g.block(() => {
-      g.line("this.headerProviders.push(provider);");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Configures reconnect behavior for this stream. The optional shouldReconnect callback receives the resolved operation metadata, including annotations."
-    });
-    g.line(
-      `withReconnect(config: Partial<ReconnectConfig>): Stream${operation.rpcName}${operation.name}Builder {`
-    );
-    g.block(() => {
-      g.line("this.reconnectConfig = normalizeReconnectConfig(config, 5);");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Sets the exact reconnect configuration for this stream, including max attempts."
-    });
-    g.line(
-      `withReconnectConfig(config: ReconnectConfig): Stream${operation.rpcName}${operation.name}Builder {`
-    );
-    g.block(() => {
-      g.line(
-        "this.reconnectConfig = normalizeReconnectConfig(config, config.maxAttempts);"
-      );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Sets the maximum allowed stream message size in bytes."
-    });
-    g.line(
-      `withMaxMessageSize(size: number): Stream${operation.rpcName}${operation.name}Builder {`
-    );
-    g.block(() => {
-      g.line("this.maxMessageSize = size;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Registers a callback invoked after the stream connects."
-    });
-    g.line(
-      `onConnect(cb: () => void): Stream${operation.rpcName}${operation.name}Builder {`
-    );
-    g.block(() => {
-      g.line("this.onConnectCb = cb;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Alias of onConnect for compatibility with previous APIs."
-    });
-    g.line(
-      `withOnConnect(cb: () => void): Stream${operation.rpcName}${operation.name}Builder { return this.onConnect(cb); }`
-    );
-    g.break();
-    writeDocComment(g, {
-      fallback: "Registers a callback invoked when the stream permanently disconnects."
-    });
-    g.line(
-      `onDisconnect(cb: (error: Error | null) => void): Stream${operation.rpcName}${operation.name}Builder {`
-    );
-    g.block(() => {
-      g.line("this.onDisconnectCb = cb;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Alias of onDisconnect for compatibility with previous APIs."
-    });
-    g.line(
-      `withOnDisconnect(cb: (error: Error | null) => void): Stream${operation.rpcName}${operation.name}Builder { return this.onDisconnect(cb); }`
-    );
-    g.break();
-    writeDocComment(g, {
-      fallback: "Registers a callback invoked before each reconnect attempt."
-    });
-    g.line(
-      `onReconnect(cb: (attempt: number, delayMs: number) => void): Stream${operation.rpcName}${operation.name}Builder {`
-    );
-    g.block(() => {
-      g.line("this.onReconnectCb = cb;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Alias of onReconnect for compatibility with previous APIs."
-    });
-    g.line(
-      `withOnReconnect(cb: (attempt: number, delayMs: number) => void): Stream${operation.rpcName}${operation.name}Builder { return this.onReconnect(cb); }`
-    );
-    g.break();
-    writeDocComment(g, {
-      fallback: "Sets an external AbortSignal used to cancel this stream."
-    });
-    g.line(
-      `withSignal(signal: AbortSignal): Stream${operation.rpcName}${operation.name}Builder {`
-    );
-    g.block(() => {
-      g.line("this.signal = signal;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      doc: operation.doc,
-      annotations: operation.annotations,
-      fallback: `Opens ${operation.rpcName}.${operation.name}.`
-    });
-    g.line(
-      `${executeSignature}: { stream: AsyncGenerator<${responseType}, void, unknown>; cancel: () => void } {`
-    );
-    g.block(() => {
-      g.line(`const validationError = ${inputHelper}.validate(input);`);
-      g.line("if (validationError !== null) {");
-      g.block(() => {
-        g.line(
-          'throw new VdlError({ message: validationError, code: "INVALID_INPUT", category: "ValidationError" });'
-        );
-      });
-      g.line("}");
-      g.line(
-        "const { stream, cancel } = this.intClient.callStream(this.rpcName, this.streamName, input, this.headerProviders, this.reconnectConfig, this.maxMessageSize, this.onConnectCb, this.onDisconnectCb, this.onReconnectCb, this.signal);"
-      );
-      g.line(
-        `const typedStream = async function* (): AsyncGenerator<${responseType}, void, unknown> {`
-      );
-      g.block(() => {
-        g.line("for await (const event of stream) {");
-        g.block(() => {
-          g.line("if (!event.ok) {");
-          g.block(() => {
-            g.line(
-              `yield { ok: false, error: event.error } as ${responseType};`
-            );
-          });
-          g.line("continue;");
-          g.line("}");
-          g.line(
-            `yield { ok: true, output: ${outputHelper}.hydrate(event.output as ${outputType}) } as ${responseType};`
-          );
-        });
-        g.line("}");
-      });
-      g.line("};");
-      g.line("return { stream: typedStream(), cancel }; ");
-    });
-    g.line("}");
-  });
-  g.line("}");
-  g.break();
-}
-__name(renderStreamBuilder, "renderStreamBuilder");
 
 // src/shared/imports.ts
 var IMPORT_EXTENSION_VALUES = ["none", "js", "ts"];
@@ -3217,23 +2462,35 @@ var FETCH_ADAPTER = dedent2(
   /* ts */
   `
   /**
+   * Default maximum request body size: 4 MiB.
+   */
+  const defaultMaxBodyBytes = 4 * 1024 * 1024;
+
+  /**
+   * Error message used when a request body exceeds the configured cap.
+   */
+  const BODY_TOO_LARGE_MESSAGE = "Request body too large";
+
+  /**
    * FetchAdapter implements HTTPAdapter for Web Standards environments.
    */
   export class FetchAdapter implements HTTPAdapter {
     private readonly request: Request;
     private readonly headers: Map<string, string>;
     private readonly chunks: string[];
-    private streamController: ReadableStreamDefaultController<Uint8Array> | null;
-    private readonly encoder: TextEncoder;
+    private readonly maxBodyBytes: number;
     private readonly closeCallbacks: Array<() => void>;
     private aborted: boolean;
 
-    constructor(request: Request) {
+    constructor(request: Request, maxBodyBytes: number = defaultMaxBodyBytes) {
+      if (!request) {
+        throw new Error("FetchAdapter requires a non-null Request");
+      }
+
       this.request = request;
       this.headers = new Map();
       this.chunks = [];
-      this.streamController = null;
-      this.encoder = new TextEncoder();
+      this.maxBodyBytes = maxBodyBytes > 0 ? maxBodyBytes : defaultMaxBodyBytes;
       this.closeCallbacks = [];
       this.aborted = false;
 
@@ -3245,9 +2502,30 @@ var FETCH_ADAPTER = dedent2(
       });
     }
 
-    /** Returns the parsed JSON request body. */
+    /**
+     * Returns the parsed JSON request body, or {} for missing bodies.
+     * Bodies beyond the cap throw before any handler runs.
+     */
     async json(): Promise<unknown> {
-      return this.request.json();
+      const contentType = this.request.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        return {};
+      }
+
+      const declared = this.request.headers.get("content-length");
+      if (declared !== null && declared !== "") {
+        const parsed = Number.parseInt(declared, 10);
+        if (Number.isFinite(parsed) && parsed > this.maxBodyBytes) {
+          throw new Error(BODY_TOO_LARGE_MESSAGE);
+        }
+      }
+
+      const text = await readBoundedText(this.request, this.maxBodyBytes);
+      if (!text || text.trim() === "") {
+        return {};
+      }
+
+      return JSON.parse(text);
     }
 
     /** Sets a response header. */
@@ -3255,33 +2533,17 @@ var FETCH_ADAPTER = dedent2(
       this.headers.set(key, value);
     }
 
-    /** Writes data to the buffered or streaming response body. */
+    /** Writes data to the buffered response body. */
     write(data: string): void {
       if (this.aborted) {
-        return;
-      }
-
-      if (this.streamController) {
-        this.streamController.enqueue(this.encoder.encode(data));
         return;
       }
 
       this.chunks.push(data);
     }
 
-    /** Flushes buffered response data. */
-    flush(): void {}
-
     /** Ends the response. */
     end(): void {
-      if (this.streamController) {
-        try {
-          this.streamController.close();
-        } catch {
-          // The controller may already be closed.
-        }
-      }
-
       for (const callback of this.closeCallbacks) {
         callback();
       }
@@ -3302,30 +2564,57 @@ var FETCH_ADAPTER = dedent2(
         headers: Object.fromEntries(this.headers),
       });
     }
-
-    /** Builds a streaming SSE response before a stream starts writing events. */
-    toStreamingResponse(): Response {
-      const stream = new ReadableStream<Uint8Array>({
-        start: (controller) => {
-          this.streamController = controller;
-        },
-        cancel: () => {
-          this.aborted = true;
-          for (const callback of this.closeCallbacks) {
-            callback();
-          }
-        },
-      });
-
-      return new Response(stream, {
-        status: 200,
-        headers: Object.fromEntries(this.headers),
-      });
-    }
   }
 
   /**
-   * Extracts RPC name and operation name from a URL path.
+   * Reads a request body as text without exceeding the byte cap.
+   * Pure Web Standards implementation shared by the fetch adapter.
+   */
+  async function readBoundedText(request: Request, maxBytes: number): Promise<string> {
+    const reader = request.body?.getReader?.();
+    if (!reader) {
+      const text = await request.text();
+      if (new TextEncoder().encode(text).length > maxBytes) {
+        throw new Error(BODY_TOO_LARGE_MESSAGE);
+      }
+      return text;
+    }
+
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value) {
+          total += value.length;
+          if (total > maxBytes) {
+            throw new Error(BODY_TOO_LARGE_MESSAGE);
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // The stream may already be closed.
+      }
+    }
+
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return new TextDecoder().decode(merged);
+  }
+
+  /**
+   * Extracts RPC name and procedure name from a URL path.
    */
   export function parseRpcPath(
     url: string | URL,
@@ -3360,39 +2649,19 @@ var FETCH_ADAPTER = dedent2(
    */
   export interface FetchHandlerOptions {
     /**
-     * URL path prefix to strip before parsing RPC/operation names.
+     * URL path prefix to strip before parsing RPC/procedure names.
      * Example: "/rpc" or "/api/v1"
      */
     prefix?: string;
   }
 
   /**
-   * Creates a Fetch API compatible request handler for a VDL Server.
+   * Creates a Fetch API compatible request handler for a VDL HTTP RPC server.
    *
-   * This handler can be used directly with:
-   * - Bun.serve()
-   * - Deno.serve()
-   * - Cloudflare Workers fetch handler
-   * - Any Web Standards compatible runtime
-   *
-   * @example
-   * \`\`\`typescript
-   * const server = new Server<MyContext>();
-   * // ... register handlers ...
-   *
-   * const handler = createFetchHandler(server, {
-   *   prefix: "/rpc",
-   * });
-   *
-   * // Bun
-   * Bun.serve({ fetch: handler });
-   *
-   * // Deno
-   * Deno.serve(handler);
-   *
-   * // Cloudflare Workers
-   * export default { fetch: handler };
-   * \`\`\`
+   * Mount it under the RPC base path; segments below the mount point must be
+   * /{rpc}/{procedure} using the VPP-2 lowerFirst transport form.
+   * Only POST requests route to procedures (anything else gets 405).
+   * Paths without exactly two segments get 404.
    *
    * @param server - The VDL Server instance
    * @param createContext - Optional function to create the context (props) from the request
@@ -3404,9 +2673,32 @@ var FETCH_ADAPTER = dedent2(
     createContext?: (req: Request) => T | Promise<T>,
     options?: FetchHandlerOptions,
   ): (req: Request) => Promise<Response> {
+    if (!server) {
+      throw new Error("createFetchHandler requires a non-null Server");
+    }
+
     const prefix = options?.prefix;
 
     return async (req: Request): Promise<Response> => {
+      if (req.method !== "POST") {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: {
+              code: "METHOD_NOT_ALLOWED",
+              message: "method not allowed, use POST",
+            },
+          }),
+          {
+            status: 405,
+            headers: {
+              "Content-Type": "application/json",
+              Allow: "POST",
+            },
+          },
+        );
+      }
+
       const parsed = parseRpcPath(req.url, prefix);
       if (!parsed) {
         return new Response(
@@ -3415,7 +2707,7 @@ var FETCH_ADAPTER = dedent2(
             error: {
               code: "NOT_FOUND",
               message:
-                "Invalid RPC path. Expected: /[prefix/]rpcName/operationName",
+                "Invalid RPC path. Expected: /[prefix/]rpcName/procedureName",
             },
           }),
           {
@@ -3445,19 +2737,10 @@ var FETCH_ADAPTER = dedent2(
         );
       }
 
-      const adapter = new FetchAdapter(req);
-      const acceptHeader = req.headers.get("Accept") ?? "";
-      const isStreamRequest = acceptHeader.includes("text/event-stream");
-
-      if (isStreamRequest) {
-        const response = adapter.toStreamingResponse();
-        server
-          .handleRequest(props, parsed.rpcName, parsed.operationName, adapter)
-          .catch(() => {
-            adapter.end();
-          });
-        return response;
-      }
+      const adapter = new FetchAdapter(
+        req,
+        server.getMaxRequestBodyBytes(),
+      );
 
       try {
         await server.handleRequest(
@@ -3498,8 +2781,8 @@ var SERVER_RUNTIME = dedent2(
   /* ts */
   `
   /**
-   * HTTPAdapter defines the interface required by VDL server to handle
-   * incoming HTTP requests and write responses to clients.
+   * HTTPAdapter defines the interface required by the RPC server to handle
+   * incoming HTTP requests and write procedure responses.
    *
    * This abstraction allows the server to work with different HTTP frameworks
    * (Express, Fastify, standard http, etc.) while maintaining the same core functionality.
@@ -3507,7 +2790,7 @@ var SERVER_RUNTIME = dedent2(
   export interface HTTPAdapter {
     /**
      * Returns the parsed JSON body of the request.
-     * The server expects the body to be a JSON object containing the RPC input.
+     * Adapters return {} for missing or empty bodies (VPP-2 empty input).
      */
     json(): Promise<unknown>;
 
@@ -3517,18 +2800,9 @@ var SERVER_RUNTIME = dedent2(
     setHeader(key: string, value: string): void;
 
     /**
-     * Writes data to the response.
-     * For procedures, this is called once with the full response.
-     * For streams, this is called for each chunk.
+     * Writes data to the response. Called once with the full JSON envelope.
      */
     write(data: string): void;
-
-    /**
-     * Flushes any buffered response data to the client.
-     * Crucial for streaming responses to ensure real-time delivery.
-     * Optional if the underlying framework handles this automatically.
-     */
-    flush?(): void;
 
     /**
      * Signals that the response is complete.
@@ -3537,17 +2811,28 @@ var SERVER_RUNTIME = dedent2(
 
     /**
      * Registers a callback to be invoked when the connection is closed by the client.
-     * Used to stop stream processing when the client disconnects.
+     * Used to cancel procedure handling when the client disconnects.
      */
     onClose(callback: () => void): void;
   }
+
+  /**
+   * Default maximum request body size: 4 MiB.
+   */
+  const defaultMaxRequestBodyBytes = 4 * 1024 * 1024;
+
+  /**
+   * Fallback envelope written when a response cannot be encoded.
+   * It stays generic so internals never reach the client.
+   */
+  const GENERIC_ERROR_ENVELOPE = '{"ok":false,"error":{"message":"Internal error"}}';
 
   /**
    * HandlerContext is the unified container for all request information and state
    * that flows through the entire request processing pipeline.
    *
    * @typeParam T - The application context type containing dependencies and request-scoped data.
-   * @typeParam I - The input payload type for this operation.
+   * @typeParam I - The input payload type for this procedure.
    */
   export class HandlerContext<T, I> {
     /** User-defined container for application dependencies and request data. */
@@ -3559,39 +2844,62 @@ var SERVER_RUNTIME = dedent2(
     /** Signal for cancellation (client disconnects). */
     public signal: AbortSignal;
 
-    /** Details of the RPC operation. */
-    public readonly operation: OperationDefinition;
+    /** Details of the procedure. */
+    public readonly proc: ProcDefinition;
 
     constructor(
       props: T,
       input: I,
       signal: AbortSignal,
-      operation: OperationDefinition,
+      proc: ProcDefinition,
     ) {
       this.props = props;
       this.input = input;
       this.signal = signal;
-      this.operation = operation;
+      this.proc = proc;
     }
 
-    /** RPC service name resolved from the current operation. */
+    /** RPC service name resolved from the current procedure. */
     get rpcName(): string {
-      return this.operation.rpcName;
+      return this.proc.rpcName;
     }
 
-    /** Operation name resolved from the current operation. */
+    /** LowerFirst transport segment for the RPC service. */
+    get rpcRoute(): string {
+      return this.proc.rpcRoute;
+    }
+
+    /** Procedure name resolved from the current procedure. */
+    get procedureName(): string {
+      return this.proc.name;
+    }
+
+    /** VPP-2 transport path for the current procedure. */
+    get path(): string {
+      return this.proc.path;
+    }
+
+    /** Alias for procedureName kept for compatibility. */
     get operationName(): string {
-      return this.operation.name;
+      return this.proc.name;
     }
 
-    /** Operation kind (procedure or stream). */
-    get operationType(): OperationDefinition["type"] {
-      return this.operation.type;
+    /** Alias for the resolved procedure definition kept for compatibility. */
+    get operation(): ProcDefinition {
+      return this.proc;
     }
 
-    /** Schema annotations preserved for this operation. */
-    get annotations(): OperationAnnotation[] {
-      return this.operation.annotations;
+    /** Schema annotations preserved for this procedure. */
+    get annotations(): Annotation[] {
+      return this.proc.annotations;
+    }
+
+    /**
+     * Reads request input as the expected type.
+     * Use it in global middleware and error handlers, where input is unknown.
+     */
+    inputAs<O>(): O | undefined {
+      return inputAs<O>(this.input);
     }
   }
 
@@ -3608,7 +2916,7 @@ var SERVER_RUNTIME = dedent2(
   export type GlobalHandlerFunc<T> = (c: HandlerContext<T, unknown>) => Promise<unknown>;
 
   /**
-   * Middleware that applies to all requests (procedures and streams).
+   * Middleware that applies to all procedure requests.
    * Wraps the next handler in the chain.
    *
    * @typeParam T - The application context type (props).
@@ -3636,48 +2944,9 @@ var SERVER_RUNTIME = dedent2(
   export type ProcMiddlewareFunc<T, I, O> = (next: ProcHandlerFunc<T, I, O>) => ProcHandlerFunc<T, I, O>;
 
   /**
-   * Function used to emit an event to a stream.
-   *
-   * @typeParam T - The application context type (props).
-   * @typeParam I - The input payload type of the stream.
-   * @typeParam O - The output payload type of the emitted event.
-   */
-  export type EmitFunc<T, I, O> = (c: HandlerContext<T, I>, output: O) => Promise<void>;
-
-  /**
-   * The core logic for a stream.
-   * Receives context with typed input and an emit function to send events.
-   *
-   * @typeParam T - The application context type (props).
-   * @typeParam I - The input payload type.
-   * @typeParam O - The output event type.
-   */
-  export type StreamHandlerFunc<T, I, O> = (c: HandlerContext<T, I>, emit: EmitFunc<T, I, O>) => Promise<void>;
-
-  /**
-   * Middleware specific to stream handlers.
-   * Wraps the execution of the stream function itself.
-   *
-   * @typeParam T - The application context type (props).
-   * @typeParam I - The input payload type.
-   * @typeParam O - The output event type.
-   */
-  export type StreamMiddlewareFunc<T, I, O> = (next: StreamHandlerFunc<T, I, O>) => StreamHandlerFunc<T, I, O>;
-
-  /**
-   * Middleware that wraps the emit function of a stream.
-   * Can be used to transform outgoing events or handle cross-cutting concerns.
-   *
-   * @typeParam T - The application context type (props).
-   * @typeParam I - The input payload type of the stream.
-   * @typeParam O - The output payload type of the emitted event.
-   */
-  export type EmitMiddlewareFunc<T, I, O> = (next: EmitFunc<T, I, O>) => EmitFunc<T, I, O>;
-
-  /**
    * Internal function used to deserialize raw JSON input into typed objects.
    */
-  type DeserializerFunc = (raw: unknown) => Promise<unknown>;
+  type deserializerFunc = (raw: unknown) => Promise<unknown>;
 
   /**
    * Custom error handler used to transform arbitrary failures into VdlError responses.
@@ -3686,45 +2955,28 @@ var SERVER_RUNTIME = dedent2(
    */
   export type ErrorHandlerFunc<T> = (c: HandlerContext<T, unknown>, error: unknown) => VdlError;
 
-  /**
-   * Configuration for stream behavior.
-   */
-  export interface StreamConfig {
-    /**
-     * Interval in milliseconds at which ping comments are sent to the client.
-     * Used to keep the connection alive and detect disconnected clients.
-     */
-    pingIntervalMs?: number;
-  }
-
   // -----------------------------------------------------------------------------
   // Server Internal Implementation
   // -----------------------------------------------------------------------------
 
   /**
-   * The core server engine used by generated VDL server wrappers.
+   * The core server engine used by generated server wrappers.
    *
    * This class manages request routing, middleware execution, input deserialization,
-   * error handling, and response formatting for both procedures and streams.
+   * error handling, and VPP-2 envelope formatting for procedures.
    *
    * Do not instantiate directly. Use the generated server facade.
    *
    * @typeParam T - The application context type (props) containing dependencies.
    */
   class InternalServer<T> {
-    private readonly operationDefs: Map<string, Map<string, OperationDefinition>>;
+    private readonly procDefs: Map<string, Map<string, ProcDefinition>>;
     private readonly procHandlers: Map<string, Map<string, ProcHandlerFunc<T, any, any>>>;
-    private readonly streamHandlers: Map<string, Map<string, StreamHandlerFunc<T, any, any>>>;
     private readonly globalMiddlewares: GlobalMiddlewareFunc<T>[];
     private readonly rpcMiddlewares: Map<string, GlobalMiddlewareFunc<T>[]>;
     private readonly procMiddlewares: Map<string, Map<string, ProcMiddlewareFunc<T, any, any>[]>>;
-    private readonly streamMiddlewares: Map<string, Map<string, StreamMiddlewareFunc<T, any, any>[]>>;
-    private readonly streamEmitMiddlewares: Map<string, Map<string, EmitMiddlewareFunc<T, any, any>[]>>;
-    private readonly procDeserializers: Map<string, Map<string, DeserializerFunc>>;
-    private readonly streamDeserializers: Map<string, Map<string, DeserializerFunc>>;
-    private globalStreamConfig: StreamConfig;
-    private readonly rpcStreamConfigs: Map<string, StreamConfig>;
-    private readonly streamConfigs: Map<string, Map<string, StreamConfig>>;
+    private readonly procDeserializers: Map<string, Map<string, deserializerFunc>>;
+    private maxRequestBodyBytes: number = defaultMaxRequestBodyBytes;
     private globalErrorHandler?: ErrorHandlerFunc<T>;
     private readonly rpcErrorHandlers: Map<string, ErrorHandlerFunc<T>>;
 
@@ -3732,48 +2984,29 @@ var SERVER_RUNTIME = dedent2(
      * Creates a new internal server.
      *
      * @param procDefs - Procedure definitions from the schema.
-     * @param streamDefs - Stream definitions from the schema.
      */
-    constructor(procDefs: OperationDefinition[], streamDefs: OperationDefinition[]) {
-      this.operationDefs = new Map();
+    constructor(procDefs: ProcDefinition[]) {
+      this.procDefs = new Map();
       this.procHandlers = new Map();
-      this.streamHandlers = new Map();
       this.globalMiddlewares = [];
       this.rpcMiddlewares = new Map();
       this.procMiddlewares = new Map();
-      this.streamMiddlewares = new Map();
-      this.streamEmitMiddlewares = new Map();
       this.procDeserializers = new Map();
-      this.streamDeserializers = new Map();
-      this.globalStreamConfig = { pingIntervalMs: 30000 };
-      this.rpcStreamConfigs = new Map();
-      this.streamConfigs = new Map();
       this.rpcErrorHandlers = new Map();
 
       const ensureRPC = (rpcName: string) => {
-        if (!this.operationDefs.has(rpcName)) {
-          this.operationDefs.set(rpcName, new Map());
+        if (!this.procDefs.has(rpcName)) {
+          this.procDefs.set(rpcName, new Map());
           this.procHandlers.set(rpcName, new Map());
-          this.streamHandlers.set(rpcName, new Map());
           this.rpcMiddlewares.set(rpcName, []);
           this.procMiddlewares.set(rpcName, new Map());
-          this.streamMiddlewares.set(rpcName, new Map());
-          this.streamEmitMiddlewares.set(rpcName, new Map());
           this.procDeserializers.set(rpcName, new Map());
-          this.streamDeserializers.set(rpcName, new Map());
-          this.rpcStreamConfigs.set(rpcName, {});
-          this.streamConfigs.set(rpcName, new Map());
         }
       };
 
       for (const def of procDefs) {
         ensureRPC(def.rpcName);
-        this.operationDefs.get(def.rpcName)?.set(def.name, def);
-      }
-
-      for (const def of streamDefs) {
-        ensureRPC(def.rpcName);
-        this.operationDefs.get(def.rpcName)?.set(def.name, def);
+        this.procDefs.get(def.rpcName)?.set(def.name, def);
       }
     }
 
@@ -3801,91 +3034,70 @@ var SERVER_RUNTIME = dedent2(
       rpcMap.get(procName)?.push(mw);
     }
 
-    /** Registers a stream-specific middleware. */
-    addStreamMiddleware(rpcName: string, streamName: string, mw: StreamMiddlewareFunc<T, any, any>): void {
-      const rpcMap = this.streamMiddlewares.get(rpcName);
-      if (!rpcMap) {
-        return;
-      }
-
-      if (!rpcMap.has(streamName)) {
-        rpcMap.set(streamName, []);
-      }
-
-      rpcMap.get(streamName)?.push(mw);
-    }
-
-    /** Registers a stream emit middleware. */
-    addStreamEmitMiddleware(rpcName: string, streamName: string, mw: EmitMiddlewareFunc<T, any, any>): void {
-      const rpcMap = this.streamEmitMiddlewares.get(rpcName);
-      if (!rpcMap) {
-        return;
-      }
-
-      if (!rpcMap.has(streamName)) {
-        rpcMap.set(streamName, []);
-      }
-
-      rpcMap.get(streamName)?.push(mw);
-    }
-
-    /** Sets the global stream configuration. */
-    setGlobalStreamConfig(cfg: StreamConfig): void {
-      this.globalStreamConfig = { ...this.globalStreamConfig, ...cfg };
-      if (!this.globalStreamConfig.pingIntervalMs || this.globalStreamConfig.pingIntervalMs <= 0) {
-        this.globalStreamConfig.pingIntervalMs = 30000;
-      }
-    }
-
-    /** Sets the default stream configuration for one RPC service. */
-    setRPCStreamConfig(rpcName: string, cfg: StreamConfig): void {
-      this.rpcStreamConfigs.set(rpcName, cfg);
-    }
-
-    /** Sets the configuration for one stream. */
-    setStreamConfig(rpcName: string, streamName: string, cfg: StreamConfig): void {
-      const rpcConfigs = this.streamConfigs.get(rpcName);
-      rpcConfigs?.set(streamName, cfg);
-    }
-
-    /** Sets the global error handler. */
-    setGlobalErrorHandler(handler: ErrorHandlerFunc<T>): void {
-      this.globalErrorHandler = handler;
-    }
-
-    /** Sets an RPC-specific error handler. */
-    setRPCErrorHandler(rpcName: string, handler: ErrorHandlerFunc<T>): void {
-      this.rpcErrorHandlers.set(rpcName, handler);
-    }
-
-    /** Registers the implementation and deserializer for one procedure. */
-    setProcHandler(rpcName: string, procName: string, handler: ProcHandlerFunc<T, any, any>, deserializer: DeserializerFunc): void {
+    /** Registers a procedure handler with its input deserializer. */
+    setProcHandler(
+      rpcName: string,
+      procName: string,
+      handler: ProcHandlerFunc<T, any, any>,
+      deserializer: deserializerFunc,
+    ): void {
       const rpcHandlers = this.procHandlers.get(rpcName);
-      if (rpcHandlers) {
-        if (rpcHandlers.has(procName)) {
-          throw new Error("Procedure handler for " + rpcName + "." + procName + " is already registered");
-        }
-        rpcHandlers.set(procName, handler);
+      if (!rpcHandlers) {
+        throw new Error("Unknown RPC service: " + rpcName);
       }
 
+      if (rpcHandlers.has(procName)) {
+        throw new Error("Procedure handler for " + rpcName + "." + procName + " is already registered");
+      }
+
+      rpcHandlers.set(procName, handler);
       this.procDeserializers.get(rpcName)?.set(procName, deserializer);
     }
 
-    /** Registers the implementation and deserializer for one stream. */
-    setStreamHandler(rpcName: string, streamName: string, handler: StreamHandlerFunc<T, any, any>, deserializer: DeserializerFunc): void {
-      const rpcHandlers = this.streamHandlers.get(rpcName);
-      if (rpcHandlers) {
-        if (rpcHandlers.has(streamName)) {
-          throw new Error("Stream handler for " + rpcName + "." + streamName + " is already registered");
-        }
-        rpcHandlers.set(streamName, handler);
-      }
-
-      this.streamDeserializers.get(rpcName)?.set(streamName, deserializer);
+    /** Sets the global error handler. */
+    setGlobalErrorHandler(fn: ErrorHandlerFunc<T>): void {
+      this.globalErrorHandler = fn;
     }
 
-    /** Handles one incoming RPC request. */
-    async handleRequest(props: T, rpcName: string, operationName: string, adapter: HTTPAdapter): Promise<void> {
+    /** Sets an RPC-specific error handler. */
+    setRPCErrorHandler(rpcName: string, fn: ErrorHandlerFunc<T>): void {
+      this.rpcErrorHandlers.set(rpcName, fn);
+    }
+
+    /**
+     * Caps request body bytes accepted per procedure call.
+     * Bodies beyond the cap fail closed with an ok:false envelope before any
+     * handler or middleware runs. Values <= 0 restore the 4 MiB default.
+     */
+    setMaxRequestBodyBytes(n: number): void {
+      this.maxRequestBodyBytes = n > 0 ? n : defaultMaxRequestBodyBytes;
+    }
+
+    /** Returns the active request body cap for adapter wiring. */
+    getMaxRequestBodyBytes(): number {
+      return this.maxRequestBodyBytes;
+    }
+
+    /**
+     * Resolves an incoming RPC segment to its canonical procedure definition.
+     * The RPC segment matches the VPP-2 lowerFirst transport form.
+     */
+    private lookupProc(
+      rpcName: string,
+      procName: string,
+    ): { proc: ProcDefinition; rpcName: string } | undefined {
+      for (const [canonicalRPC, procs] of this.procDefs) {
+        const proc = procs.get(procName);
+        if (proc && (canonicalRPC === rpcName || proc.rpcRoute === rpcName)) {
+          return { proc, rpcName: canonicalRPC };
+        }
+      }
+
+      return undefined;
+    }
+
+    /** Handles one incoming procedure request. */
+    async handleRequest(props: T, rpcName: string, procName: string, adapter: HTTPAdapter): Promise<void> {
       if (!adapter) {
         throw new Error("HTTPAdapter is required");
       }
@@ -3896,21 +3108,22 @@ var SERVER_RUNTIME = dedent2(
       } catch (error) {
         this.writeProcResponse(adapter, {
           ok: false,
-          error: new VdlError({
-            message: "Invalid request body",
-            details: { originalError: String(error) },
-          }),
+          error: this.toBodyError(error),
         });
         return;
       }
 
-      const operation = this.operationDefs.get(rpcName)?.get(operationName);
-      if (!operation) {
+      if (rawInput === undefined || rawInput === null || rawInput === "") {
+        rawInput = {};
+      }
+
+      const resolved = this.lookupProc(rpcName, procName);
+      if (!resolved) {
         this.writeProcResponse(adapter, {
           ok: false,
           error: new VdlError({
-            message: "Invalid operation: " + rpcName + "." + operationName,
-            code: "INVALID_OPERATION",
+            message: "Invalid procedure: " + rpcName + "." + procName,
+            code: "INVALID_PROCEDURE",
             category: "ClientError",
           }),
         });
@@ -3924,26 +3137,38 @@ var SERVER_RUNTIME = dedent2(
         props,
         rawInput,
         abortController.signal,
-        operation,
+        cloneProcDefinition(resolved.proc),
       );
-
-      if (operation.type === "stream") {
-        await this.handleStreamRequest(ctx, rpcName, operationName, adapter);
-        return;
-      }
 
       let response: Response<unknown>;
       try {
-        const output = await this.handleProcRequest(ctx, rpcName, operationName);
-        response = { ok: true, output };
+        const output = await this.handleProcRequest(ctx, resolved.rpcName, resolved.proc.name);
+        response = resolved.proc.hasOutput
+          ? { ok: true, output }
+          : ({ ok: true } as Response<unknown>);
       } catch (error) {
         response = {
           ok: false,
-          error: this.resolveErrorHandler(rpcName)(ctx, error),
+          error: this.resolveErrorHandler(resolved.rpcName)(ctx, error),
         };
       }
 
       this.writeProcResponse(adapter, response);
+    }
+
+    /**
+     * Maps body read failures to public envelopes.
+     * Oversized bodies fail closed before any handler runs.
+     */
+    private toBodyError(error: unknown): VdlError {
+      if (String((error as Error)?.message ?? error).includes("too large")) {
+        return new VdlError({ message: "Request body too large" });
+      }
+
+      return new VdlError({
+        message: "Invalid request body",
+        details: { originalError: String(error) },
+      });
     }
 
     /** Resolves the effective error handler for one RPC service. */
@@ -3957,7 +3182,13 @@ var SERVER_RUNTIME = dedent2(
         return this.globalErrorHandler;
       }
 
-      return (_ctx, error) => asError(error);
+      // Default: sanitized. Internal details never reach the client.
+      // VdlError failures (validation, handler errors) pass through untouched.
+      // Custom handlers receive the raw error and decide what to expose.
+      return (_ctx, error) =>
+        error instanceof VdlError
+          ? error
+          : new VdlError({ message: "Internal error" });
     }
 
     /** Executes one procedure including all middleware layers. */
@@ -3993,128 +3224,17 @@ var SERVER_RUNTIME = dedent2(
       return next(c);
     }
 
-    /** Executes one stream including middleware, emission, and SSE lifecycle handling. */
-    private async handleStreamRequest(c: HandlerContext<T, unknown>, rpcName: string, streamName: string, adapter: HTTPAdapter): Promise<void> {
-      const baseHandler = this.streamHandlers.get(rpcName)?.get(streamName);
-      const deserialize = this.streamDeserializers.get(rpcName)?.get(streamName);
-      if (!baseHandler || !deserialize) {
-        this.writeProcResponse(adapter, {
-          ok: false,
-          error: new VdlError({
-            message: rpcName + "." + streamName + " not implemented",
-            code: "NOT_IMPLEMENTED",
-          }),
-        });
-        return;
-      }
-
-      try {
-        c.input = await deserialize(c.input);
-      } catch (error) {
-        this.writeProcResponse(adapter, {
-          ok: false,
-          error: asError(error),
-        });
-        return;
-      }
-
-      adapter.setHeader("Content-Type", "text/event-stream");
-      adapter.setHeader("Cache-Control", "no-cache");
-      adapter.setHeader("Connection", "keep-alive");
-
-      let closed = false;
-      adapter.onClose(() => {
-        closed = true;
-      });
-
-      /** Writes to the adapter only while the connection remains open. */
-      const safeWrite = (data: string) => {
-        if (closed || c.signal.aborted) {
-          return;
-        }
-        adapter.write(data);
-        adapter.flush?.();
-      };
-
-      /** Resolves ping interval precedence: global -> RPC -> stream. */
-      let pingInterval = this.globalStreamConfig.pingIntervalMs || 30000;
-      const rpcConfig = this.rpcStreamConfigs.get(rpcName);
-      if (rpcConfig?.pingIntervalMs) {
-        pingInterval = rpcConfig.pingIntervalMs;
-      }
-      const streamConfig = this.streamConfigs.get(rpcName)?.get(streamName);
-      if (streamConfig?.pingIntervalMs) {
-        pingInterval = streamConfig.pingIntervalMs;
-      }
-      if (pingInterval <= 0) {
-        pingInterval = 30000;
-      }
-
-      /** Emits SSE heartbeat comments to keep intermediaries from timing out idle streams. */
-      const pingTimer = setInterval(() => {
-        if (closed || c.signal.aborted) {
-          clearInterval(pingTimer);
-          return;
-        }
-
-        safeWrite(": ping\\n\\n");
-      }, pingInterval);
-
-      /** Ensures timers are cleared and the adapter is always closed exactly once. */
-      const cleanup = () => {
-        clearInterval(pingTimer);
-        closed = true;
-        adapter.end();
-      };
-
-      /** Base emit function that serializes typed events into SSE data frames. */
-      const baseEmit: EmitFunc<T, any, unknown> = async (_ctx, output) => {
-        safeWrite("data: " + JSON.stringify({ ok: true, output }) + "\\n\\n");
-      };
-
-      /** Composed emit function after applying stream-level emit middleware. */
-      let emitFinal = baseEmit;
-      const emitMws = this.streamEmitMiddlewares.get(rpcName)?.get(streamName) ?? [];
-      for (let index = emitMws.length - 1; index >= 0; index -= 1) {
-        emitFinal = emitMws[index](emitFinal);
-      }
-
-      /** Composed request handler after applying stream, RPC, and global middleware. */
-      let next: GlobalHandlerFunc<T> = (ctx) =>
-        baseHandler(ctx as HandlerContext<T, any>, emitFinal) as Promise<unknown>;
-
-      const streamMws = this.streamMiddlewares.get(rpcName)?.get(streamName) ?? [];
-      if (streamMws.length > 0) {
-        let streamNext = baseHandler;
-        for (let index = streamMws.length - 1; index >= 0; index -= 1) {
-          streamNext = streamMws[index](streamNext);
-        }
-        next = (ctx) => streamNext(ctx as HandlerContext<T, any>, emitFinal) as Promise<unknown>;
-      }
-
-      const rpcMws = this.rpcMiddlewares.get(rpcName) ?? [];
-      for (let index = rpcMws.length - 1; index >= 0; index -= 1) {
-        next = rpcMws[index](next);
-      }
-
-      for (let index = this.globalMiddlewares.length - 1; index >= 0; index -= 1) {
-        next = this.globalMiddlewares[index](next);
-      }
-
-      try {
-        await next(c);
-      } catch (error) {
-        const mapped = this.resolveErrorHandler(rpcName)(c, error);
-        safeWrite("data: " + JSON.stringify({ ok: false, error: mapped }) + "\\n\\n");
-      } finally {
-        cleanup();
-      }
-    }
-
-    /** Writes one standard JSON procedure response. */
+    /**
+     * Writes one standard JSON procedure response with HTTP 200 semantics.
+     * Encoding failures fall back to a generic envelope.
+     */
     private writeProcResponse(adapter: HTTPAdapter, response: Response<unknown>): void {
       adapter.setHeader("Content-Type", "application/json");
-      adapter.write(JSON.stringify(response));
+      try {
+        adapter.write(JSON.stringify(response));
+      } catch {
+        adapter.write(GENERIC_ERROR_ENVELOPE);
+      }
       adapter.end();
     }
   }
@@ -4143,7 +3263,7 @@ function generateServerFile(context) {
 __name(generateServerFile, "generateServerFile");
 function renderServerFacade(g, context) {
   writeDocComment(g, {
-    fallback: "Server provides the high-level, type-safe API for building a VDL RPC server."
+    fallback: "Server provides the high-level, type-safe API for building a VDL HTTP RPC server."
   });
   g.line("export class Server<T = unknown> {");
   g.block(() => {
@@ -4152,28 +3272,17 @@ function renderServerFacade(g, context) {
     g.break();
     g.line("constructor() {");
     g.block(() => {
-      g.line(
-        "this.intServer = new InternalServer<T>(VDLProcedures, VDLStreams);"
-      );
+      g.line("this.intServer = new InternalServer<T>(VDLProcs);");
       g.line("this.rpcs = new ServerRPCRegistry<T>(this.intServer);");
     });
     g.line("}");
     g.break();
     writeDocComment(g, {
-      fallback: "Registers a global middleware that runs for every procedure and stream."
+      fallback: "Registers a global middleware that runs for every procedure."
     });
     g.line("use(mw: GlobalMiddlewareFunc<T>): void {");
     g.block(() => {
       g.line("this.intServer.addGlobalMiddleware(mw);");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Sets the global stream configuration for all streams."
-    });
-    g.line("setStreamConfig(cfg: StreamConfig): void {");
-    g.block(() => {
-      g.line("this.intServer.setGlobalStreamConfig(cfg);");
     });
     g.line("}");
     g.break();
@@ -4187,7 +3296,25 @@ function renderServerFacade(g, context) {
     g.line("}");
     g.break();
     writeDocComment(g, {
-      fallback: "Processes one incoming RPC request using the provided HTTP adapter."
+      fallback: "Caps request body bytes accepted per procedure call. Values <= 0 restore the 4 MiB default."
+    });
+    g.line("setMaxRequestBodyBytes(n: number): void {");
+    g.block(() => {
+      g.line("this.intServer.setMaxRequestBodyBytes(n);");
+    });
+    g.line("}");
+    g.break();
+    writeDocComment(g, {
+      fallback: "Returns the active request body cap used when wiring adapters."
+    });
+    g.line("getMaxRequestBodyBytes(): number {");
+    g.block(() => {
+      g.line("return this.intServer.getMaxRequestBodyBytes();");
+    });
+    g.line("}");
+    g.break();
+    writeDocComment(g, {
+      fallback: "Processes one incoming procedure request using the provided HTTP adapter."
     });
     g.line("async handleRequest(");
     g.block(() => {
@@ -4227,12 +3354,8 @@ function renderServerFacade(g, context) {
   for (const service of context.services) {
     renderServiceClass(g, service);
     renderProcedureRegistry2(g, service);
-    renderStreamRegistry2(g, service);
-    for (const procedure of service.procedures) {
+    for (const procedure of service.procs) {
       renderProcedureEntry(g, procedure);
-    }
-    for (const stream of service.streams) {
-      renderStreamEntry(g, stream);
     }
   }
 }
@@ -4259,34 +3382,21 @@ function renderServiceClass(g, service) {
   g.block(() => {
     g.line("private readonly intServer: InternalServer<T>;");
     g.line(`public readonly procs: Server${service.name}Procs<T>;`);
-    g.line(`public readonly streams: Server${service.name}Streams<T>;`);
     g.break();
     g.line("constructor(intServer: InternalServer<T>) {");
     g.block(() => {
       g.line("this.intServer = intServer;");
       g.line(`this.procs = new Server${service.name}Procs<T>(intServer);`);
-      g.line(`this.streams = new Server${service.name}Streams<T>(intServer);`);
     });
     g.line("}");
     g.break();
     writeDocComment(g, {
-      fallback: `Registers a middleware for every ${service.name} operation.`
+      fallback: `Registers a middleware for every ${service.name} procedure.`
     });
     g.line("use(mw: GlobalMiddlewareFunc<T>): void {");
     g.block(() => {
       g.line(
         `this.intServer.addRPCMiddleware(${JSON.stringify(service.name)}, mw);`
-      );
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: `Sets the default stream configuration for ${service.name}.`
-    });
-    g.line("setStreamConfig(cfg: StreamConfig): void {");
-    g.block(() => {
-      g.line(
-        `this.intServer.setRPCStreamConfig(${JSON.stringify(service.name)}, cfg);`
       );
     });
     g.line("}");
@@ -4317,7 +3427,7 @@ function renderProcedureRegistry2(g, service) {
       "constructor(intServer: InternalServer<T>) { this.intServer = intServer; }"
     );
     g.break();
-    for (const procedure of service.procedures) {
+    for (const procedure of service.procs) {
       writeDocComment(g, {
         doc: procedure.doc,
         annotations: procedure.annotations,
@@ -4333,43 +3443,17 @@ function renderProcedureRegistry2(g, service) {
   g.break();
 }
 __name(renderProcedureRegistry2, "renderProcedureRegistry");
-function renderStreamRegistry2(g, service) {
+function renderProcedureEntry(g, proc) {
+  const inputType = renderRuntimeTypeReference2(proc.inputTypeName);
+  const outputType = renderRuntimeTypeReference2(proc.outputTypeName);
+  const inputHelper = renderRuntimeHelperReference2(proc.inputTypeName);
+  const outputHelper = renderRuntimeHelperReference2(proc.outputTypeName);
   writeDocComment(g, {
-    fallback: `Registry exposing every generated stream entry for ${service.name}.`
+    doc: proc.doc,
+    annotations: proc.annotations,
+    fallback: `Typed procedure registration entry for ${proc.rpcName}.${proc.name}.`
   });
-  g.line(`class Server${service.name}Streams<T> {`);
-  g.block(() => {
-    g.line("private readonly intServer: InternalServer<T>;");
-    g.line(
-      "constructor(intServer: InternalServer<T>) { this.intServer = intServer; }"
-    );
-    g.break();
-    for (const stream of service.streams) {
-      writeDocComment(g, {
-        doc: stream.doc,
-        annotations: stream.annotations,
-        fallback: `Registers the ${service.name}.${stream.name} stream.`
-      });
-      g.line(
-        `${stream.serverMethodName}(): Stream${service.name}${stream.name}Entry<T> { return new Stream${service.name}${stream.name}Entry<T>(this.intServer); }`
-      );
-      g.break();
-    }
-  });
-  g.line("}");
-  g.break();
-}
-__name(renderStreamRegistry2, "renderStreamRegistry");
-function renderProcedureEntry(g, operation) {
-  const inputType = renderRuntimeTypeReference2(operation.inputTypeName);
-  const outputType = renderRuntimeTypeReference2(operation.outputTypeName);
-  const inputHelper = renderRuntimeHelperReference2(operation.inputTypeName);
-  writeDocComment(g, {
-    doc: operation.doc,
-    annotations: operation.annotations,
-    fallback: `Typed procedure registration entry for ${operation.rpcName}.${operation.name}.`
-  });
-  g.line(`class Proc${operation.rpcName}${operation.name}Entry<T> {`);
+  g.line(`class Proc${proc.rpcName}${proc.name}Entry<T> {`);
   g.block(() => {
     g.line("private readonly intServer: InternalServer<T>;");
     g.line(
@@ -4377,9 +3461,9 @@ function renderProcedureEntry(g, operation) {
     );
     g.break();
     writeDocComment(g, {
-      doc: operation.doc,
-      annotations: operation.annotations,
-      fallback: `Registers a typed middleware for ${operation.rpcName}.${operation.name}.`
+      doc: proc.doc,
+      annotations: proc.annotations,
+      fallback: `Registers a typed middleware for ${proc.rpcName}.${proc.name}.`
     });
     g.line(
       `use(mw: ProcMiddlewareFunc<T, ${inputType}, ${outputType}>): void {`
@@ -4400,7 +3484,7 @@ function renderProcedureEntry(g, operation) {
           g.line("};");
           g.line("const typedChain = mw(typedNext);");
           g.line(
-            `const cSpecific = new HandlerContext<T, ${inputType}>(cGeneric.props, cGeneric.input as ${inputType}, cGeneric.signal, cGeneric.operation);`
+            `const cSpecific = new HandlerContext<T, ${inputType}>(cGeneric.props, cGeneric.input as ${inputType}, cGeneric.signal, cGeneric.proc);`
           );
           g.line("return typedChain(cSpecific);");
         });
@@ -4408,15 +3492,15 @@ function renderProcedureEntry(g, operation) {
       });
       g.line("};");
       g.line(
-        `this.intServer.addProcMiddleware(${JSON.stringify(operation.rpcName)}, ${JSON.stringify(operation.name)}, adapted);`
+        `this.intServer.addProcMiddleware(${JSON.stringify(proc.rpcName)}, ${JSON.stringify(proc.name)}, adapted);`
       );
     });
     g.line("}");
     g.break();
     writeDocComment(g, {
-      doc: operation.doc,
-      annotations: operation.annotations,
-      fallback: `Registers the business handler for ${operation.rpcName}.${operation.name}.`
+      doc: proc.doc,
+      annotations: proc.annotations,
+      fallback: `Registers the business handler for ${proc.rpcName}.${proc.name}.`
     });
     g.line(
       `handle(handler: ProcHandlerFunc<T, ${inputType}, ${outputType}>): void {`
@@ -4427,13 +3511,22 @@ function renderProcedureEntry(g, operation) {
       );
       g.block(() => {
         g.line(
-          `const cSpecific = new HandlerContext<T, ${inputType}>(cGeneric.props, cGeneric.input as ${inputType}, cGeneric.signal, cGeneric.operation);`
+          `const cSpecific = new HandlerContext<T, ${inputType}>(cGeneric.props, cGeneric.input as ${inputType}, cGeneric.signal, cGeneric.proc);`
         );
-        g.line("return handler(cSpecific);");
+        g.line("const output = await handler(cSpecific);");
+        g.line(`const outputError = ${outputHelper}.validate(output);`);
+        g.line("if (outputError !== null) {");
+        g.block(() => {
+          g.line(
+            'throw new Error("Internal error: unexpected output for " + cSpecific.rpcName + "." + cSpecific.procedureName);'
+          );
+        });
+        g.line("}");
+        g.line("return output;");
       });
       g.line("};");
       g.break();
-      g.line("const deserializer: DeserializerFunc = async (raw) => {");
+      g.line("const deserializer: deserializerFunc = async (raw) => {");
       g.block(() => {
         g.line(`const error = ${inputHelper}.validate(raw);`);
         g.line("if (error !== null) {");
@@ -4447,7 +3540,7 @@ function renderProcedureEntry(g, operation) {
       });
       g.line("};");
       g.line(
-        `this.intServer.setProcHandler(${JSON.stringify(operation.rpcName)}, ${JSON.stringify(operation.name)}, adaptedHandler, deserializer);`
+        `this.intServer.setProcHandler(${JSON.stringify(proc.rpcName)}, ${JSON.stringify(proc.name)}, adaptedHandler, deserializer);`
       );
     });
     g.line("}");
@@ -4456,156 +3549,6 @@ function renderProcedureEntry(g, operation) {
   g.break();
 }
 __name(renderProcedureEntry, "renderProcedureEntry");
-function renderStreamEntry(g, operation) {
-  const inputType = renderRuntimeTypeReference2(operation.inputTypeName);
-  const outputType = renderRuntimeTypeReference2(operation.outputTypeName);
-  const inputHelper = renderRuntimeHelperReference2(operation.inputTypeName);
-  writeDocComment(g, {
-    doc: operation.doc,
-    annotations: operation.annotations,
-    fallback: `Typed stream registration entry for ${operation.rpcName}.${operation.name}.`
-  });
-  g.line(`class Stream${operation.rpcName}${operation.name}Entry<T> {`);
-  g.block(() => {
-    g.line("private readonly intServer: InternalServer<T>;");
-    g.line(
-      "constructor(intServer: InternalServer<T>) { this.intServer = intServer; }"
-    );
-    g.break();
-    writeDocComment(g, {
-      fallback: `Sets the stream configuration for ${operation.rpcName}.${operation.name}.`
-    });
-    g.line("setConfig(cfg: StreamConfig): void {");
-    g.block(() => {
-      g.line(
-        `this.intServer.setStreamConfig(${JSON.stringify(operation.rpcName)}, ${JSON.stringify(operation.name)}, cfg);`
-      );
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      doc: operation.doc,
-      annotations: operation.annotations,
-      fallback: `Registers a typed middleware for ${operation.rpcName}.${operation.name}.`
-    });
-    g.line(
-      `use(mw: StreamMiddlewareFunc<T, ${inputType}, ${outputType}>): void {`
-    );
-    g.block(() => {
-      g.line("const adapted: StreamMiddlewareFunc<T, any, any> = (next) => {");
-      g.block(() => {
-        g.line("return async (cGeneric, emitGeneric) => {");
-        g.block(() => {
-          g.line(
-            `const typedNext: StreamHandlerFunc<T, ${inputType}, ${outputType}> = async (c, emit) => {`
-          );
-          g.block(() => {
-            g.line("cGeneric.props = c.props;");
-            g.line("cGeneric.input = c.input;");
-            g.line("return next(cGeneric, emitGeneric);");
-          });
-          g.line("};");
-          g.line("const typedChain = mw(typedNext);");
-          g.line(
-            `const emitSpecific: EmitFunc<T, ${inputType}, ${outputType}> = async (_c, output) => emitGeneric(cGeneric, output);`
-          );
-          g.line(
-            `const cSpecific = new HandlerContext<T, ${inputType}>(cGeneric.props, cGeneric.input as ${inputType}, cGeneric.signal, cGeneric.operation);`
-          );
-          g.line("return typedChain(cSpecific, emitSpecific);");
-        });
-        g.line("};");
-      });
-      g.line("};");
-      g.line(
-        `this.intServer.addStreamMiddleware(${JSON.stringify(operation.rpcName)}, ${JSON.stringify(operation.name)}, adapted);`
-      );
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: `Registers a typed emit middleware for ${operation.rpcName}.${operation.name}.`
-    });
-    g.line(
-      `useEmit(mw: EmitMiddlewareFunc<T, ${inputType}, ${outputType}>): void {`
-    );
-    g.block(() => {
-      g.line("const adapted: EmitMiddlewareFunc<T, any, any> = (next) => {");
-      g.block(() => {
-        g.line("return async (cGeneric, outputGeneric) => {");
-        g.block(() => {
-          g.line(
-            `const typedNext: EmitFunc<T, ${inputType}, ${outputType}> = async (c, output) => {`
-          );
-          g.block(() => {
-            g.line("cGeneric.props = c.props;");
-            g.line("cGeneric.input = c.input;");
-            g.line("return next(cGeneric, output);");
-          });
-          g.line("};");
-          g.line("const emitChain = mw(typedNext);");
-          g.line(
-            `const cSpecific = new HandlerContext<T, ${inputType}>(cGeneric.props, cGeneric.input as ${inputType}, cGeneric.signal, cGeneric.operation);`
-          );
-          g.line(
-            `return emitChain(cSpecific, outputGeneric as ${outputType});`
-          );
-        });
-        g.line("};");
-      });
-      g.line("};");
-      g.line(
-        `this.intServer.addStreamEmitMiddleware(${JSON.stringify(operation.rpcName)}, ${JSON.stringify(operation.name)}, adapted);`
-      );
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      doc: operation.doc,
-      annotations: operation.annotations,
-      fallback: `Registers the business handler for ${operation.rpcName}.${operation.name}.`
-    });
-    g.line(
-      `handle(handler: StreamHandlerFunc<T, ${inputType}, ${outputType}>): void {`
-    );
-    g.block(() => {
-      g.line(
-        "const adaptedHandler: StreamHandlerFunc<T, any, any> = async (cGeneric, emitGeneric) => {"
-      );
-      g.block(() => {
-        g.line(
-          `const emitSpecific: EmitFunc<T, ${inputType}, ${outputType}> = async (_c, output) => emitGeneric(cGeneric, output);`
-        );
-        g.line(
-          `const cSpecific = new HandlerContext<T, ${inputType}>(cGeneric.props, cGeneric.input as ${inputType}, cGeneric.signal, cGeneric.operation);`
-        );
-        g.line("return handler(cSpecific, emitSpecific);");
-      });
-      g.line("};");
-      g.break();
-      g.line("const deserializer: DeserializerFunc = async (raw) => {");
-      g.block(() => {
-        g.line(`const error = ${inputHelper}.validate(raw);`);
-        g.line("if (error !== null) {");
-        g.block(() => {
-          g.line(
-            'throw new VdlError({ message: error, code: "INVALID_INPUT", category: "ValidationError" });'
-          );
-        });
-        g.line("}");
-        g.line(`return ${inputHelper}.hydrate(raw as ${inputType});`);
-      });
-      g.line("};");
-      g.line(
-        `this.intServer.setStreamHandler(${JSON.stringify(operation.rpcName)}, ${JSON.stringify(operation.name)}, adaptedHandler, deserializer);`
-      );
-    });
-    g.line("}");
-  });
-  g.line("}");
-  g.break();
-}
-__name(renderStreamEntry, "renderStreamEntry");
 function renderRuntimeTypeReference2(typeName) {
   return typeName ? `vdlTypes.${typeName}` : "Void";
 }
@@ -4634,20 +3577,29 @@ var NODE_ADAPTER = dedent2(
   /* ts */
   `
   /**
+   * Default maximum request body size: 4 MiB.
+   */
+  const defaultMaxBodyBytes = 4 * 1024 * 1024;
+
+  /**
+   * Error message used when a request body exceeds the configured cap.
+   */
+  const BODY_TOO_LARGE_MESSAGE = "Request body too large";
+
+  /**
    * NodeAdapter implements HTTPAdapter for Node.js HTTP environments.
    *
    * This adapter works with Node.js \`IncomingMessage\` and \`ServerResponse\` objects
    * used by Express, Fastify, native \`http.createServer\`, and similar frameworks.
    *
-   * It supports:
-   * - JSON body parsing (manual buffering or pre-parsed by middleware)
-   * - Streaming responses (SSE)
-   * - Connection close detection
+   * It supports JSON body parsing (manual buffering or pre-parsed by middleware)
+   * and connection close detection for procedure cancellation.
    */
   export class NodeAdapter implements HTTPAdapter {
     private readonly req: IncomingMessage;
     private readonly res: ServerResponse;
     private readonly parsedBody: unknown;
+    private readonly maxBodyBytes: number;
     private bodyPromise: Promise<unknown> | null;
     private readonly closeCallbacks: Array<() => void>;
     private closed: boolean;
@@ -4658,18 +3610,24 @@ var NODE_ADAPTER = dedent2(
      * @param req - The Node.js IncomingMessage (request)
      * @param res - The Node.js ServerResponse
      * @param parsedBody - Optional pre-parsed body (from Express body-parser, etc.)
+     * @param maxBodyBytes - Optional request body cap. Values <= 0 restore the 4 MiB default.
      */
-    constructor(req: IncomingMessage, res: ServerResponse, parsedBody?: unknown) {
+    constructor(req: IncomingMessage, res: ServerResponse, parsedBody?: unknown, maxBodyBytes: number = defaultMaxBodyBytes) {
+      if (!req) {
+        throw new Error("NodeAdapter requires a non-null request");
+      }
+      if (!res) {
+        throw new Error("NodeAdapter requires a non-null response");
+      }
+
       this.req = req;
       this.res = res;
       this.parsedBody = parsedBody;
+      this.maxBodyBytes = maxBodyBytes > 0 ? maxBodyBytes : defaultMaxBodyBytes;
       this.bodyPromise = null;
       this.closeCallbacks = [];
       this.closed = false;
 
-      // Listen for premature client disconnect (aborted connection)
-      // The 'close' event on res fires when the underlying connection is closed
-      // We use 'aborted' on req to detect if the client closed the connection early
       req.on("aborted", () => {
         this.closed = true;
         for (const callback of this.closeCallbacks) {
@@ -4677,11 +3635,7 @@ var NODE_ADAPTER = dedent2(
         }
       });
 
-      // The 'close' event on res is fired when the response has been sent
-      // OR when the underlying connection is closed before finishing
-      // We only care about premature closes, not normal completion
       res.on("close", () => {
-        // Only mark closed if we haven't finished writing
         if (!this.res.writableFinished) {
           this.closed = true;
           for (const callback of this.closeCallbacks) {
@@ -4690,7 +3644,6 @@ var NODE_ADAPTER = dedent2(
         }
       });
 
-      // If no pre-parsed body, start buffering immediately to avoid missing data events
       if (parsedBody === undefined) {
         this.startBodyBuffering();
       }
@@ -4699,13 +3652,41 @@ var NODE_ADAPTER = dedent2(
     /** Starts buffering the request body immediately. */
     private startBodyBuffering(): void {
       const chunks: Buffer[] = [];
+      let total = 0;
+      let settled = false;
+
+      const fail = (error: Error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        this.req.removeAllListeners("data");
+        this.req.removeAllListeners("end");
+        rejectBody(error);
+      };
+
+      let rejectBody: (error: Error) => void = () => {};
 
       this.bodyPromise = new Promise<unknown>((resolve, reject) => {
+        rejectBody = reject;
+
         this.req.on("data", (chunk: Buffer) => {
+          if (settled) {
+            return;
+          }
+          total += chunk.length;
+          if (total > this.maxBodyBytes) {
+            fail(new Error(BODY_TOO_LARGE_MESSAGE));
+            return;
+          }
           chunks.push(chunk);
         });
 
         this.req.on("end", () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
           try {
             const bodyString = Buffer.concat(chunks).toString("utf-8");
             if (!bodyString || bodyString.trim() === "") {
@@ -4720,14 +3701,20 @@ var NODE_ADAPTER = dedent2(
         });
 
         this.req.on("error", (error) => {
-          reject(error);
+          fail(error as Error);
         });
       });
     }
 
-    /** Returns the parsed JSON request body. */
+    /**
+     * Returns the parsed JSON request body, or {} for missing bodies.
+     * Bodies beyond the cap throw before any handler runs.
+     */
     async json(): Promise<unknown> {
       if (this.parsedBody !== undefined) {
+        if (this.parsedBody === null) {
+          return {};
+        }
         return this.parsedBody;
       }
 
@@ -4748,24 +3735,6 @@ var NODE_ADAPTER = dedent2(
       }
 
       this.res.write(data);
-    }
-
-    /** Flushes buffered response data when the host supports it. */
-    flush(): void {
-      if (this.closed || this.res.writableEnded) {
-        return;
-      }
-
-      const response = this.res as ServerResponse & {
-        flush?: () => void;
-        flushHeaders?: () => void;
-      };
-
-      response.flush?.();
-
-      if (!this.res.headersSent) {
-        response.flushHeaders?.();
-      }
     }
 
     /** Ends the response. */
@@ -4830,41 +3799,12 @@ var NODE_ADAPTER = dedent2(
   }
 
   /**
-   * Creates a Node.js HTTP request handler for a VDL Server.
+   * Creates a Node.js HTTP request handler for a VDL HTTP RPC server.
    *
-   * This handler can be used with:
-   * - Native \`http.createServer()\`
-   * - Express: \`app.use('/rpc', handler)\` or \`app.all('/rpc/*', handler)\`
-   * - Fastify: \`fastify.all('/rpc/*', handler)\`
-   * - Any Node.js HTTP framework
-   *
-   * @example
-   * \`\`\`typescript
-   * import { createServer } from "http";
-   * import { Server } from "./gen/server";
-   * import { createNodeHandler } from "./gen/adapters/node";
-   *
-   * const server = new Server<MyContext>();
-   * // ... register handlers ...
-   *
-   * const handler = createNodeHandler(server, {
-   *   prefix: "/rpc",
-   * });
-   *
-   * // Native http
-   * createServer(async (req, res) => {
-   *   await handler(req, res);
-   * }).listen(3000);
-   *
-   * // Express
-   * app.use('/rpc', async (req, res, next) => {
-   *   try {
-   *     await handler(req, res);
-   *   } catch (err) {
-   *     next(err);
-   *   }
-   * });
-   * \`\`\`
+   * Mount it under the RPC base path; segments below the mount point must be
+   * /{rpc}/{procedure} using the VPP-2 lowerFirst transport form.
+   * Only POST requests route to procedures (anything else gets 405).
+   * Paths without exactly two segments get 404.
    *
    * @param server - The VDL Server instance
    * @param createContext - Optional function to create the context (props) from req/res
@@ -4876,9 +3816,33 @@ var NODE_ADAPTER = dedent2(
     createContext?: (req: IncomingMessage, res: ServerResponse) => T | Promise<T>,
     options?: NodeHandlerOptions,
   ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+    if (!server) {
+      throw new Error("createNodeHandler requires a non-null Server");
+    }
+
     const prefix = options?.prefix;
 
     return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+      if (req.method !== "POST") {
+        if (!res.headersSent) {
+          res.writeHead(405, {
+            "Content-Type": "application/json",
+            Allow: "POST",
+          });
+        }
+
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: {
+              code: "METHOD_NOT_ALLOWED",
+              message: "method not allowed, use POST",
+            },
+          }),
+        );
+        return;
+      }
+
       const parsed = parseNodeRpcPath(req.url ?? "/", prefix);
       if (!parsed) {
         if (!res.headersSent) {
@@ -4891,7 +3855,7 @@ var NODE_ADAPTER = dedent2(
             error: {
               code: "NOT_FOUND",
               message:
-                "Invalid RPC path. Expected: /[prefix/]rpcName/operationName",
+                "Invalid RPC path. Expected: /[prefix/]rpcName/procedureName",
             },
           }),
         );
@@ -4899,7 +3863,12 @@ var NODE_ADAPTER = dedent2(
       }
 
       const reqWithBody = req as IncomingMessage & { body?: unknown };
-      const adapter = new NodeAdapter(req, res, reqWithBody.body);
+      const adapter = new NodeAdapter(
+        req,
+        res,
+        reqWithBody.body,
+        server.getMaxRequestBodyBytes(),
+      );
 
       let props: T;
       try {
@@ -4956,7 +3925,7 @@ var NODE_ADAPTER = dedent2(
 
 // src/stages/emit/generate-files.ts
 function generateFiles(context) {
-  if (context.procedures.length === 0 && context.streams.length === 0) {
+  if (context.procs.length === 0) {
     return [];
   }
   return compact([
@@ -4967,52 +3936,49 @@ function generateFiles(context) {
 }
 __name(generateFiles, "generateFiles");
 
-// src/shared/naming.ts
-function toInlineTypeName(parentTypeName, fieldName) {
-  return `${parentTypeName}${pascalCase(fieldName)}`;
+// node_modules/@varavel/vdl-plugin-sdk/dist/utils/deprecations/get-deprecation-message.js
+function getDeprecationMessage(annotations) {
+  const argument = getAnnotationArg(annotations, "deprecated");
+  if ((argument === null || argument === void 0 ? void 0 : argument.kind) !== "string") return;
+  return argument.stringValue;
 }
-__name(toInlineTypeName, "toInlineTypeName");
-function toClientOperationMethodName(rpcName, operationName) {
-  return `${camelCase(rpcName)}${pascalCase(operationName)}`;
+__name(getDeprecationMessage, "getDeprecationMessage");
+
+// node_modules/@varavel/vdl-plugin-sdk/dist/utils/deprecations/is-deprecated.js
+function isDeprecated(annotations) {
+  return getAnnotation(annotations, "deprecated") !== void 0;
 }
-__name(toClientOperationMethodName, "toClientOperationMethodName");
-function toStreamResponseTypeName(operationTypeName) {
-  return `${operationTypeName}Response`;
-}
-__name(toStreamResponseTypeName, "toStreamResponseTypeName");
+__name(isDeprecated, "isDeprecated");
 
 // src/stages/model/build-context.ts
 function createGeneratorContext(options) {
   const services = [];
   for (const typeDef of options.input.ir.types) {
-    if (!getAnnotation(typeDef.annotations, "rpc")) {
+    if (!getAnnotation(typeDef.annotations, "httpRpc")) {
       continue;
     }
     services.push(buildServiceDescriptor(typeDef));
   }
-  const procedures = [];
-  const streams = [];
+  const procs = [];
   for (const service of services) {
-    procedures.push(...service.procedures);
-    streams.push(...service.streams);
+    procs.push(...service.procs);
   }
   return {
     input: options.input,
     schema: options.input.ir,
     options: options.generatorOptions,
     services,
-    procedures,
-    streams
+    procs
   };
 }
 __name(createGeneratorContext, "createGeneratorContext");
 function buildServiceDescriptor(typeDef) {
   var _a3;
-  const operations = [];
+  const procs = [];
   for (const field of (_a3 = typeDef.typeRef.objectFields) != null ? _a3 : []) {
-    const operation = buildOperationDescriptor(typeDef, field);
-    if (operation) {
-      operations.push(operation);
+    const proc = buildProcDescriptor(typeDef, field);
+    if (proc) {
+      procs.push(proc);
     }
   }
   return {
@@ -5020,46 +3986,37 @@ function buildServiceDescriptor(typeDef) {
     accessorName: camelCase(typeDef.name),
     position: typeDef.position,
     doc: typeDef.doc,
-    deprecated: getDeprecatedMessage2(typeDef.annotations),
-    annotations: filterOperationalAnnotations(typeDef.annotations, "rpc"),
-    operations,
-    procedures: operations.filter((operation) => operation.kind === "proc"),
-    streams: operations.filter((operation) => operation.kind === "stream")
+    deprecated: deprecationNote(typeDef.annotations),
+    annotations: filterOperationalAnnotations(typeDef.annotations, "httpRpc"),
+    procs
   };
 }
 __name(buildServiceDescriptor, "buildServiceDescriptor");
-function buildOperationDescriptor(serviceType, field) {
-  const isProc = Boolean(getAnnotation(field.annotations, "proc"));
-  const isStream = Boolean(getAnnotation(field.annotations, "stream"));
-  if (!isProc && !isStream || isProc && isStream) {
+function buildProcDescriptor(serviceType, field) {
+  if (!getAnnotation(field.annotations, "proc")) {
     return void 0;
   }
   const inputField = findOperationField(field, "input");
   const outputField = findOperationField(field, "output");
-  const operationTypeName = toInlineTypeName(serviceType.name, field.name);
+  const procTypeName = toInlineTypeName(serviceType.name, field.name);
   return {
-    kind: isProc ? "proc" : "stream",
     rpcName: serviceType.name,
     rpcAccessorName: camelCase(serviceType.name),
     name: field.name,
     clientMethodName: toClientOperationMethodName(serviceType.name, field.name),
     serverMethodName: field.name,
-    operationTypeName,
-    streamResponseTypeName: toStreamResponseTypeName(operationTypeName),
-    inputTypeName: inputField ? toInlineTypeName(operationTypeName, inputField.name) : void 0,
-    outputTypeName: outputField ? toInlineTypeName(operationTypeName, outputField.name) : void 0,
+    procTypeName,
+    inputTypeName: inputField ? toInlineTypeName(procTypeName, inputField.name) : void 0,
+    outputTypeName: outputField ? toInlineTypeName(procTypeName, outputField.name) : void 0,
     position: field.position,
     doc: field.doc,
-    deprecated: getDeprecatedMessage2(field.annotations),
-    annotations: filterOperationalAnnotations(
-      field.annotations,
-      isProc ? "proc" : "stream"
-    ),
+    deprecated: deprecationNote(field.annotations),
+    annotations: filterOperationalAnnotations(field.annotations, "proc"),
     inputField,
     outputField
   };
 }
-__name(buildOperationDescriptor, "buildOperationDescriptor");
+__name(buildProcDescriptor, "buildProcDescriptor");
 function findOperationField(operationField, name) {
   var _a3;
   return (_a3 = operationField.typeRef.objectFields) == null ? void 0 : _a3.find(
@@ -5067,17 +4024,14 @@ function findOperationField(operationField, name) {
   );
 }
 __name(findOperationField, "findOperationField");
-function getDeprecatedMessage2(annotations) {
-  const argument = getAnnotationArg(annotations, "deprecated");
-  if (!getAnnotation(annotations, "deprecated")) {
+function deprecationNote(annotations) {
+  var _a3;
+  if (!isDeprecated(annotations)) {
     return void 0;
   }
-  if (!argument) {
-    return "";
-  }
-  return unwrapLiteral(argument);
+  return (_a3 = getDeprecationMessage(annotations)) != null ? _a3 : "";
 }
-__name(getDeprecatedMessage2, "getDeprecatedMessage");
+__name(deprecationNote, "deprecationNote");
 function filterOperationalAnnotations(annotations, marker) {
   return annotations.filter((annotation) => annotation.name !== marker);
 }
@@ -5127,7 +4081,7 @@ __name(isImportExtension, "isImportExtension");
 // src/generate.ts
 function generate(input) {
   const generatorOptions = resolveGeneratorOptions(input);
-  assertValidIrForRpc(input.ir);
+  assertValidIrForHttpRpc(input.ir);
   const context = createGeneratorContext({ input, generatorOptions });
   const files = generateFiles(context);
   return { files };
