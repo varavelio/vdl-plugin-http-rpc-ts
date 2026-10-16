@@ -27,23 +27,35 @@ export function generateFetchAdapterFile(
 
 const FETCH_ADAPTER = dedent(/* ts */ `
   /**
+   * Default maximum request body size: 4 MiB.
+   */
+  const defaultMaxBodyBytes = 4 * 1024 * 1024;
+
+  /**
+   * Error message used when a request body exceeds the configured cap.
+   */
+  const BODY_TOO_LARGE_MESSAGE = "Request body too large";
+
+  /**
    * FetchAdapter implements HTTPAdapter for Web Standards environments.
    */
   export class FetchAdapter implements HTTPAdapter {
     private readonly request: Request;
     private readonly headers: Map<string, string>;
     private readonly chunks: string[];
-    private streamController: ReadableStreamDefaultController<Uint8Array> | null;
-    private readonly encoder: TextEncoder;
+    private readonly maxBodyBytes: number;
     private readonly closeCallbacks: Array<() => void>;
     private aborted: boolean;
 
-    constructor(request: Request) {
+    constructor(request: Request, maxBodyBytes: number = defaultMaxBodyBytes) {
+      if (!request) {
+        throw new Error("FetchAdapter requires a non-null Request");
+      }
+
       this.request = request;
       this.headers = new Map();
       this.chunks = [];
-      this.streamController = null;
-      this.encoder = new TextEncoder();
+      this.maxBodyBytes = maxBodyBytes > 0 ? maxBodyBytes : defaultMaxBodyBytes;
       this.closeCallbacks = [];
       this.aborted = false;
 
@@ -55,9 +67,30 @@ const FETCH_ADAPTER = dedent(/* ts */ `
       });
     }
 
-    /** Returns the parsed JSON request body. */
+    /**
+     * Returns the parsed JSON request body, or {} for missing bodies.
+     * Bodies beyond the cap throw before any handler runs.
+     */
     async json(): Promise<unknown> {
-      return this.request.json();
+      const contentType = this.request.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        return {};
+      }
+
+      const declared = this.request.headers.get("content-length");
+      if (declared !== null && declared !== "") {
+        const parsed = Number.parseInt(declared, 10);
+        if (Number.isFinite(parsed) && parsed > this.maxBodyBytes) {
+          throw new Error(BODY_TOO_LARGE_MESSAGE);
+        }
+      }
+
+      const text = await readBoundedText(this.request, this.maxBodyBytes);
+      if (!text || text.trim() === "") {
+        return {};
+      }
+
+      return JSON.parse(text);
     }
 
     /** Sets a response header. */
@@ -65,33 +98,17 @@ const FETCH_ADAPTER = dedent(/* ts */ `
       this.headers.set(key, value);
     }
 
-    /** Writes data to the buffered or streaming response body. */
+    /** Writes data to the buffered response body. */
     write(data: string): void {
       if (this.aborted) {
-        return;
-      }
-
-      if (this.streamController) {
-        this.streamController.enqueue(this.encoder.encode(data));
         return;
       }
 
       this.chunks.push(data);
     }
 
-    /** Flushes buffered response data. */
-    flush(): void {}
-
     /** Ends the response. */
     end(): void {
-      if (this.streamController) {
-        try {
-          this.streamController.close();
-        } catch {
-          // The controller may already be closed.
-        }
-      }
-
       for (const callback of this.closeCallbacks) {
         callback();
       }
@@ -112,30 +129,57 @@ const FETCH_ADAPTER = dedent(/* ts */ `
         headers: Object.fromEntries(this.headers),
       });
     }
-
-    /** Builds a streaming SSE response before a stream starts writing events. */
-    toStreamingResponse(): Response {
-      const stream = new ReadableStream<Uint8Array>({
-        start: (controller) => {
-          this.streamController = controller;
-        },
-        cancel: () => {
-          this.aborted = true;
-          for (const callback of this.closeCallbacks) {
-            callback();
-          }
-        },
-      });
-
-      return new Response(stream, {
-        status: 200,
-        headers: Object.fromEntries(this.headers),
-      });
-    }
   }
 
   /**
-   * Extracts RPC name and operation name from a URL path.
+   * Reads a request body as text without exceeding the byte cap.
+   * Pure Web Standards implementation shared by the fetch adapter.
+   */
+  async function readBoundedText(request: Request, maxBytes: number): Promise<string> {
+    const reader = request.body?.getReader?.();
+    if (!reader) {
+      const text = await request.text();
+      if (new TextEncoder().encode(text).length > maxBytes) {
+        throw new Error(BODY_TOO_LARGE_MESSAGE);
+      }
+      return text;
+    }
+
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value) {
+          total += value.length;
+          if (total > maxBytes) {
+            throw new Error(BODY_TOO_LARGE_MESSAGE);
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // The stream may already be closed.
+      }
+    }
+
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return new TextDecoder().decode(merged);
+  }
+
+  /**
+   * Extracts RPC name and procedure name from a URL path.
    */
   export function parseRpcPath(
     url: string | URL,
@@ -170,39 +214,19 @@ const FETCH_ADAPTER = dedent(/* ts */ `
    */
   export interface FetchHandlerOptions {
     /**
-     * URL path prefix to strip before parsing RPC/operation names.
+     * URL path prefix to strip before parsing RPC/procedure names.
      * Example: "/rpc" or "/api/v1"
      */
     prefix?: string;
   }
 
   /**
-   * Creates a Fetch API compatible request handler for a VDL Server.
+   * Creates a Fetch API compatible request handler for a VDL HTTP RPC server.
    *
-   * This handler can be used directly with:
-   * - Bun.serve()
-   * - Deno.serve()
-   * - Cloudflare Workers fetch handler
-   * - Any Web Standards compatible runtime
-   *
-   * @example
-   * \`\`\`typescript
-   * const server = new Server<MyContext>();
-   * // ... register handlers ...
-   *
-   * const handler = createFetchHandler(server, {
-   *   prefix: "/rpc",
-   * });
-   *
-   * // Bun
-   * Bun.serve({ fetch: handler });
-   *
-   * // Deno
-   * Deno.serve(handler);
-   *
-   * // Cloudflare Workers
-   * export default { fetch: handler };
-   * \`\`\`
+   * Mount it under the RPC base path; segments below the mount point must be
+   * /{rpc}/{procedure} using the VPP-2 lowerFirst transport form.
+   * Only POST requests route to procedures (anything else gets 405).
+   * Paths without exactly two segments get 404.
    *
    * @param server - The VDL Server instance
    * @param createContext - Optional function to create the context (props) from the request
@@ -214,9 +238,32 @@ const FETCH_ADAPTER = dedent(/* ts */ `
     createContext?: (req: Request) => T | Promise<T>,
     options?: FetchHandlerOptions,
   ): (req: Request) => Promise<Response> {
+    if (!server) {
+      throw new Error("createFetchHandler requires a non-null Server");
+    }
+
     const prefix = options?.prefix;
 
     return async (req: Request): Promise<Response> => {
+      if (req.method !== "POST") {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: {
+              code: "METHOD_NOT_ALLOWED",
+              message: "method not allowed, use POST",
+            },
+          }),
+          {
+            status: 405,
+            headers: {
+              "Content-Type": "application/json",
+              Allow: "POST",
+            },
+          },
+        );
+      }
+
       const parsed = parseRpcPath(req.url, prefix);
       if (!parsed) {
         return new Response(
@@ -225,7 +272,7 @@ const FETCH_ADAPTER = dedent(/* ts */ `
             error: {
               code: "NOT_FOUND",
               message:
-                "Invalid RPC path. Expected: /[prefix/]rpcName/operationName",
+                "Invalid RPC path. Expected: /[prefix/]rpcName/procedureName",
             },
           }),
           {
@@ -255,19 +302,10 @@ const FETCH_ADAPTER = dedent(/* ts */ `
         );
       }
 
-      const adapter = new FetchAdapter(req);
-      const acceptHeader = req.headers.get("Accept") ?? "";
-      const isStreamRequest = acceptHeader.includes("text/event-stream");
-
-      if (isStreamRequest) {
-        const response = adapter.toStreamingResponse();
-        server
-          .handleRequest(props, parsed.rpcName, parsed.operationName, adapter)
-          .catch(() => {
-            adapter.end();
-          });
-        return response;
-      }
+      const adapter = new FetchAdapter(
+        req,
+        server.getMaxRequestBodyBytes(),
+      );
 
       try {
         await server.handleRequest(

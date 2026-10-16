@@ -28,20 +28,29 @@ export function generateNodeAdapterFile(
 
 const NODE_ADAPTER = dedent(/* ts */ `
   /**
+   * Default maximum request body size: 4 MiB.
+   */
+  const defaultMaxBodyBytes = 4 * 1024 * 1024;
+
+  /**
+   * Error message used when a request body exceeds the configured cap.
+   */
+  const BODY_TOO_LARGE_MESSAGE = "Request body too large";
+
+  /**
    * NodeAdapter implements HTTPAdapter for Node.js HTTP environments.
    *
    * This adapter works with Node.js \`IncomingMessage\` and \`ServerResponse\` objects
    * used by Express, Fastify, native \`http.createServer\`, and similar frameworks.
    *
-   * It supports:
-   * - JSON body parsing (manual buffering or pre-parsed by middleware)
-   * - Streaming responses (SSE)
-   * - Connection close detection
+   * It supports JSON body parsing (manual buffering or pre-parsed by middleware)
+   * and connection close detection for procedure cancellation.
    */
   export class NodeAdapter implements HTTPAdapter {
     private readonly req: IncomingMessage;
     private readonly res: ServerResponse;
     private readonly parsedBody: unknown;
+    private readonly maxBodyBytes: number;
     private bodyPromise: Promise<unknown> | null;
     private readonly closeCallbacks: Array<() => void>;
     private closed: boolean;
@@ -52,18 +61,24 @@ const NODE_ADAPTER = dedent(/* ts */ `
      * @param req - The Node.js IncomingMessage (request)
      * @param res - The Node.js ServerResponse
      * @param parsedBody - Optional pre-parsed body (from Express body-parser, etc.)
+     * @param maxBodyBytes - Optional request body cap. Values <= 0 restore the 4 MiB default.
      */
-    constructor(req: IncomingMessage, res: ServerResponse, parsedBody?: unknown) {
+    constructor(req: IncomingMessage, res: ServerResponse, parsedBody?: unknown, maxBodyBytes: number = defaultMaxBodyBytes) {
+      if (!req) {
+        throw new Error("NodeAdapter requires a non-null request");
+      }
+      if (!res) {
+        throw new Error("NodeAdapter requires a non-null response");
+      }
+
       this.req = req;
       this.res = res;
       this.parsedBody = parsedBody;
+      this.maxBodyBytes = maxBodyBytes > 0 ? maxBodyBytes : defaultMaxBodyBytes;
       this.bodyPromise = null;
       this.closeCallbacks = [];
       this.closed = false;
 
-      // Listen for premature client disconnect (aborted connection)
-      // The 'close' event on res fires when the underlying connection is closed
-      // We use 'aborted' on req to detect if the client closed the connection early
       req.on("aborted", () => {
         this.closed = true;
         for (const callback of this.closeCallbacks) {
@@ -71,11 +86,7 @@ const NODE_ADAPTER = dedent(/* ts */ `
         }
       });
 
-      // The 'close' event on res is fired when the response has been sent
-      // OR when the underlying connection is closed before finishing
-      // We only care about premature closes, not normal completion
       res.on("close", () => {
-        // Only mark closed if we haven't finished writing
         if (!this.res.writableFinished) {
           this.closed = true;
           for (const callback of this.closeCallbacks) {
@@ -84,7 +95,6 @@ const NODE_ADAPTER = dedent(/* ts */ `
         }
       });
 
-      // If no pre-parsed body, start buffering immediately to avoid missing data events
       if (parsedBody === undefined) {
         this.startBodyBuffering();
       }
@@ -93,13 +103,41 @@ const NODE_ADAPTER = dedent(/* ts */ `
     /** Starts buffering the request body immediately. */
     private startBodyBuffering(): void {
       const chunks: Buffer[] = [];
+      let total = 0;
+      let settled = false;
+
+      const fail = (error: Error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        this.req.removeAllListeners("data");
+        this.req.removeAllListeners("end");
+        rejectBody(error);
+      };
+
+      let rejectBody: (error: Error) => void = () => {};
 
       this.bodyPromise = new Promise<unknown>((resolve, reject) => {
+        rejectBody = reject;
+
         this.req.on("data", (chunk: Buffer) => {
+          if (settled) {
+            return;
+          }
+          total += chunk.length;
+          if (total > this.maxBodyBytes) {
+            fail(new Error(BODY_TOO_LARGE_MESSAGE));
+            return;
+          }
           chunks.push(chunk);
         });
 
         this.req.on("end", () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
           try {
             const bodyString = Buffer.concat(chunks).toString("utf-8");
             if (!bodyString || bodyString.trim() === "") {
@@ -114,14 +152,20 @@ const NODE_ADAPTER = dedent(/* ts */ `
         });
 
         this.req.on("error", (error) => {
-          reject(error);
+          fail(error as Error);
         });
       });
     }
 
-    /** Returns the parsed JSON request body. */
+    /**
+     * Returns the parsed JSON request body, or {} for missing bodies.
+     * Bodies beyond the cap throw before any handler runs.
+     */
     async json(): Promise<unknown> {
       if (this.parsedBody !== undefined) {
+        if (this.parsedBody === null) {
+          return {};
+        }
         return this.parsedBody;
       }
 
@@ -142,24 +186,6 @@ const NODE_ADAPTER = dedent(/* ts */ `
       }
 
       this.res.write(data);
-    }
-
-    /** Flushes buffered response data when the host supports it. */
-    flush(): void {
-      if (this.closed || this.res.writableEnded) {
-        return;
-      }
-
-      const response = this.res as ServerResponse & {
-        flush?: () => void;
-        flushHeaders?: () => void;
-      };
-
-      response.flush?.();
-
-      if (!this.res.headersSent) {
-        response.flushHeaders?.();
-      }
     }
 
     /** Ends the response. */
@@ -224,41 +250,12 @@ const NODE_ADAPTER = dedent(/* ts */ `
   }
 
   /**
-   * Creates a Node.js HTTP request handler for a VDL Server.
+   * Creates a Node.js HTTP request handler for a VDL HTTP RPC server.
    *
-   * This handler can be used with:
-   * - Native \`http.createServer()\`
-   * - Express: \`app.use('/rpc', handler)\` or \`app.all('/rpc/*', handler)\`
-   * - Fastify: \`fastify.all('/rpc/*', handler)\`
-   * - Any Node.js HTTP framework
-   *
-   * @example
-   * \`\`\`typescript
-   * import { createServer } from "http";
-   * import { Server } from "./gen/server";
-   * import { createNodeHandler } from "./gen/adapters/node";
-   *
-   * const server = new Server<MyContext>();
-   * // ... register handlers ...
-   *
-   * const handler = createNodeHandler(server, {
-   *   prefix: "/rpc",
-   * });
-   *
-   * // Native http
-   * createServer(async (req, res) => {
-   *   await handler(req, res);
-   * }).listen(3000);
-   *
-   * // Express
-   * app.use('/rpc', async (req, res, next) => {
-   *   try {
-   *     await handler(req, res);
-   *   } catch (err) {
-   *     next(err);
-   *   }
-   * });
-   * \`\`\`
+   * Mount it under the RPC base path; segments below the mount point must be
+   * /{rpc}/{procedure} using the VPP-2 lowerFirst transport form.
+   * Only POST requests route to procedures (anything else gets 405).
+   * Paths without exactly two segments get 404.
    *
    * @param server - The VDL Server instance
    * @param createContext - Optional function to create the context (props) from req/res
@@ -270,9 +267,33 @@ const NODE_ADAPTER = dedent(/* ts */ `
     createContext?: (req: IncomingMessage, res: ServerResponse) => T | Promise<T>,
     options?: NodeHandlerOptions,
   ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+    if (!server) {
+      throw new Error("createNodeHandler requires a non-null Server");
+    }
+
     const prefix = options?.prefix;
 
     return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+      if (req.method !== "POST") {
+        if (!res.headersSent) {
+          res.writeHead(405, {
+            "Content-Type": "application/json",
+            Allow: "POST",
+          });
+        }
+
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: {
+              code: "METHOD_NOT_ALLOWED",
+              message: "method not allowed, use POST",
+            },
+          }),
+        );
+        return;
+      }
+
       const parsed = parseNodeRpcPath(req.url ?? "/", prefix);
       if (!parsed) {
         if (!res.headersSent) {
@@ -285,7 +306,7 @@ const NODE_ADAPTER = dedent(/* ts */ `
             error: {
               code: "NOT_FOUND",
               message:
-                "Invalid RPC path. Expected: /[prefix/]rpcName/operationName",
+                "Invalid RPC path. Expected: /[prefix/]rpcName/procedureName",
             },
           }),
         );
@@ -293,7 +314,12 @@ const NODE_ADAPTER = dedent(/* ts */ `
       }
 
       const reqWithBody = req as IncomingMessage & { body?: unknown };
-      const adapter = new NodeAdapter(req, res, reqWithBody.body);
+      const adapter = new NodeAdapter(
+        req,
+        res,
+        reqWithBody.body,
+        server.getMaxRequestBodyBytes(),
+      );
 
       let props: T;
       try {

@@ -9,8 +9,8 @@ export function renderServerRuntimeSource(): string {
 
 const SERVER_RUNTIME = dedent(/* ts */ `
   /**
-   * HTTPAdapter defines the interface required by VDL server to handle
-   * incoming HTTP requests and write responses to clients.
+   * HTTPAdapter defines the interface required by the RPC server to handle
+   * incoming HTTP requests and write procedure responses.
    *
    * This abstraction allows the server to work with different HTTP frameworks
    * (Express, Fastify, standard http, etc.) while maintaining the same core functionality.
@@ -18,7 +18,7 @@ const SERVER_RUNTIME = dedent(/* ts */ `
   export interface HTTPAdapter {
     /**
      * Returns the parsed JSON body of the request.
-     * The server expects the body to be a JSON object containing the RPC input.
+     * Adapters return {} for missing or empty bodies (VPP-2 empty input).
      */
     json(): Promise<unknown>;
 
@@ -28,18 +28,9 @@ const SERVER_RUNTIME = dedent(/* ts */ `
     setHeader(key: string, value: string): void;
 
     /**
-     * Writes data to the response.
-     * For procedures, this is called once with the full response.
-     * For streams, this is called for each chunk.
+     * Writes data to the response. Called once with the full JSON envelope.
      */
     write(data: string): void;
-
-    /**
-     * Flushes any buffered response data to the client.
-     * Crucial for streaming responses to ensure real-time delivery.
-     * Optional if the underlying framework handles this automatically.
-     */
-    flush?(): void;
 
     /**
      * Signals that the response is complete.
@@ -48,17 +39,28 @@ const SERVER_RUNTIME = dedent(/* ts */ `
 
     /**
      * Registers a callback to be invoked when the connection is closed by the client.
-     * Used to stop stream processing when the client disconnects.
+     * Used to cancel procedure handling when the client disconnects.
      */
     onClose(callback: () => void): void;
   }
+
+  /**
+   * Default maximum request body size: 4 MiB.
+   */
+  const defaultMaxRequestBodyBytes = 4 * 1024 * 1024;
+
+  /**
+   * Fallback envelope written when a response cannot be encoded.
+   * It stays generic so internals never reach the client.
+   */
+  const GENERIC_ERROR_ENVELOPE = '{"ok":false,"error":{"message":"Internal error"}}';
 
   /**
    * HandlerContext is the unified container for all request information and state
    * that flows through the entire request processing pipeline.
    *
    * @typeParam T - The application context type containing dependencies and request-scoped data.
-   * @typeParam I - The input payload type for this operation.
+   * @typeParam I - The input payload type for this procedure.
    */
   export class HandlerContext<T, I> {
     /** User-defined container for application dependencies and request data. */
@@ -70,39 +72,62 @@ const SERVER_RUNTIME = dedent(/* ts */ `
     /** Signal for cancellation (client disconnects). */
     public signal: AbortSignal;
 
-    /** Details of the RPC operation. */
-    public readonly operation: OperationDefinition;
+    /** Details of the procedure. */
+    public readonly proc: ProcDefinition;
 
     constructor(
       props: T,
       input: I,
       signal: AbortSignal,
-      operation: OperationDefinition,
+      proc: ProcDefinition,
     ) {
       this.props = props;
       this.input = input;
       this.signal = signal;
-      this.operation = operation;
+      this.proc = proc;
     }
 
-    /** RPC service name resolved from the current operation. */
+    /** RPC service name resolved from the current procedure. */
     get rpcName(): string {
-      return this.operation.rpcName;
+      return this.proc.rpcName;
     }
 
-    /** Operation name resolved from the current operation. */
+    /** LowerFirst transport segment for the RPC service. */
+    get rpcRoute(): string {
+      return this.proc.rpcRoute;
+    }
+
+    /** Procedure name resolved from the current procedure. */
+    get procedureName(): string {
+      return this.proc.name;
+    }
+
+    /** VPP-2 transport path for the current procedure. */
+    get path(): string {
+      return this.proc.path;
+    }
+
+    /** Alias for procedureName kept for compatibility. */
     get operationName(): string {
-      return this.operation.name;
+      return this.proc.name;
     }
 
-    /** Operation kind (procedure or stream). */
-    get operationType(): OperationDefinition["type"] {
-      return this.operation.type;
+    /** Alias for the resolved procedure definition kept for compatibility. */
+    get operation(): ProcDefinition {
+      return this.proc;
     }
 
-    /** Schema annotations preserved for this operation. */
-    get annotations(): OperationAnnotation[] {
-      return this.operation.annotations;
+    /** Schema annotations preserved for this procedure. */
+    get annotations(): Annotation[] {
+      return this.proc.annotations;
+    }
+
+    /**
+     * Reads request input as the expected type.
+     * Use it in global middleware and error handlers, where input is unknown.
+     */
+    inputAs<O>(): O | undefined {
+      return inputAs<O>(this.input);
     }
   }
 
@@ -119,7 +144,7 @@ const SERVER_RUNTIME = dedent(/* ts */ `
   export type GlobalHandlerFunc<T> = (c: HandlerContext<T, unknown>) => Promise<unknown>;
 
   /**
-   * Middleware that applies to all requests (procedures and streams).
+   * Middleware that applies to all procedure requests.
    * Wraps the next handler in the chain.
    *
    * @typeParam T - The application context type (props).
@@ -147,48 +172,9 @@ const SERVER_RUNTIME = dedent(/* ts */ `
   export type ProcMiddlewareFunc<T, I, O> = (next: ProcHandlerFunc<T, I, O>) => ProcHandlerFunc<T, I, O>;
 
   /**
-   * Function used to emit an event to a stream.
-   *
-   * @typeParam T - The application context type (props).
-   * @typeParam I - The input payload type of the stream.
-   * @typeParam O - The output payload type of the emitted event.
-   */
-  export type EmitFunc<T, I, O> = (c: HandlerContext<T, I>, output: O) => Promise<void>;
-
-  /**
-   * The core logic for a stream.
-   * Receives context with typed input and an emit function to send events.
-   *
-   * @typeParam T - The application context type (props).
-   * @typeParam I - The input payload type.
-   * @typeParam O - The output event type.
-   */
-  export type StreamHandlerFunc<T, I, O> = (c: HandlerContext<T, I>, emit: EmitFunc<T, I, O>) => Promise<void>;
-
-  /**
-   * Middleware specific to stream handlers.
-   * Wraps the execution of the stream function itself.
-   *
-   * @typeParam T - The application context type (props).
-   * @typeParam I - The input payload type.
-   * @typeParam O - The output event type.
-   */
-  export type StreamMiddlewareFunc<T, I, O> = (next: StreamHandlerFunc<T, I, O>) => StreamHandlerFunc<T, I, O>;
-
-  /**
-   * Middleware that wraps the emit function of a stream.
-   * Can be used to transform outgoing events or handle cross-cutting concerns.
-   *
-   * @typeParam T - The application context type (props).
-   * @typeParam I - The input payload type of the stream.
-   * @typeParam O - The output payload type of the emitted event.
-   */
-  export type EmitMiddlewareFunc<T, I, O> = (next: EmitFunc<T, I, O>) => EmitFunc<T, I, O>;
-
-  /**
    * Internal function used to deserialize raw JSON input into typed objects.
    */
-  type DeserializerFunc = (raw: unknown) => Promise<unknown>;
+  type deserializerFunc = (raw: unknown) => Promise<unknown>;
 
   /**
    * Custom error handler used to transform arbitrary failures into VdlError responses.
@@ -197,45 +183,28 @@ const SERVER_RUNTIME = dedent(/* ts */ `
    */
   export type ErrorHandlerFunc<T> = (c: HandlerContext<T, unknown>, error: unknown) => VdlError;
 
-  /**
-   * Configuration for stream behavior.
-   */
-  export interface StreamConfig {
-    /**
-     * Interval in milliseconds at which ping comments are sent to the client.
-     * Used to keep the connection alive and detect disconnected clients.
-     */
-    pingIntervalMs?: number;
-  }
-
   // -----------------------------------------------------------------------------
   // Server Internal Implementation
   // -----------------------------------------------------------------------------
 
   /**
-   * The core server engine used by generated VDL server wrappers.
+   * The core server engine used by generated server wrappers.
    *
    * This class manages request routing, middleware execution, input deserialization,
-   * error handling, and response formatting for both procedures and streams.
+   * error handling, and VPP-2 envelope formatting for procedures.
    *
    * Do not instantiate directly. Use the generated server facade.
    *
    * @typeParam T - The application context type (props) containing dependencies.
    */
   class InternalServer<T> {
-    private readonly operationDefs: Map<string, Map<string, OperationDefinition>>;
+    private readonly procDefs: Map<string, Map<string, ProcDefinition>>;
     private readonly procHandlers: Map<string, Map<string, ProcHandlerFunc<T, any, any>>>;
-    private readonly streamHandlers: Map<string, Map<string, StreamHandlerFunc<T, any, any>>>;
     private readonly globalMiddlewares: GlobalMiddlewareFunc<T>[];
     private readonly rpcMiddlewares: Map<string, GlobalMiddlewareFunc<T>[]>;
     private readonly procMiddlewares: Map<string, Map<string, ProcMiddlewareFunc<T, any, any>[]>>;
-    private readonly streamMiddlewares: Map<string, Map<string, StreamMiddlewareFunc<T, any, any>[]>>;
-    private readonly streamEmitMiddlewares: Map<string, Map<string, EmitMiddlewareFunc<T, any, any>[]>>;
-    private readonly procDeserializers: Map<string, Map<string, DeserializerFunc>>;
-    private readonly streamDeserializers: Map<string, Map<string, DeserializerFunc>>;
-    private globalStreamConfig: StreamConfig;
-    private readonly rpcStreamConfigs: Map<string, StreamConfig>;
-    private readonly streamConfigs: Map<string, Map<string, StreamConfig>>;
+    private readonly procDeserializers: Map<string, Map<string, deserializerFunc>>;
+    private maxRequestBodyBytes: number = defaultMaxRequestBodyBytes;
     private globalErrorHandler?: ErrorHandlerFunc<T>;
     private readonly rpcErrorHandlers: Map<string, ErrorHandlerFunc<T>>;
 
@@ -243,48 +212,29 @@ const SERVER_RUNTIME = dedent(/* ts */ `
      * Creates a new internal server.
      *
      * @param procDefs - Procedure definitions from the schema.
-     * @param streamDefs - Stream definitions from the schema.
      */
-    constructor(procDefs: OperationDefinition[], streamDefs: OperationDefinition[]) {
-      this.operationDefs = new Map();
+    constructor(procDefs: ProcDefinition[]) {
+      this.procDefs = new Map();
       this.procHandlers = new Map();
-      this.streamHandlers = new Map();
       this.globalMiddlewares = [];
       this.rpcMiddlewares = new Map();
       this.procMiddlewares = new Map();
-      this.streamMiddlewares = new Map();
-      this.streamEmitMiddlewares = new Map();
       this.procDeserializers = new Map();
-      this.streamDeserializers = new Map();
-      this.globalStreamConfig = { pingIntervalMs: 30000 };
-      this.rpcStreamConfigs = new Map();
-      this.streamConfigs = new Map();
       this.rpcErrorHandlers = new Map();
 
       const ensureRPC = (rpcName: string) => {
-        if (!this.operationDefs.has(rpcName)) {
-          this.operationDefs.set(rpcName, new Map());
+        if (!this.procDefs.has(rpcName)) {
+          this.procDefs.set(rpcName, new Map());
           this.procHandlers.set(rpcName, new Map());
-          this.streamHandlers.set(rpcName, new Map());
           this.rpcMiddlewares.set(rpcName, []);
           this.procMiddlewares.set(rpcName, new Map());
-          this.streamMiddlewares.set(rpcName, new Map());
-          this.streamEmitMiddlewares.set(rpcName, new Map());
           this.procDeserializers.set(rpcName, new Map());
-          this.streamDeserializers.set(rpcName, new Map());
-          this.rpcStreamConfigs.set(rpcName, {});
-          this.streamConfigs.set(rpcName, new Map());
         }
       };
 
       for (const def of procDefs) {
         ensureRPC(def.rpcName);
-        this.operationDefs.get(def.rpcName)?.set(def.name, def);
-      }
-
-      for (const def of streamDefs) {
-        ensureRPC(def.rpcName);
-        this.operationDefs.get(def.rpcName)?.set(def.name, def);
+        this.procDefs.get(def.rpcName)?.set(def.name, def);
       }
     }
 
@@ -312,91 +262,70 @@ const SERVER_RUNTIME = dedent(/* ts */ `
       rpcMap.get(procName)?.push(mw);
     }
 
-    /** Registers a stream-specific middleware. */
-    addStreamMiddleware(rpcName: string, streamName: string, mw: StreamMiddlewareFunc<T, any, any>): void {
-      const rpcMap = this.streamMiddlewares.get(rpcName);
-      if (!rpcMap) {
-        return;
-      }
-
-      if (!rpcMap.has(streamName)) {
-        rpcMap.set(streamName, []);
-      }
-
-      rpcMap.get(streamName)?.push(mw);
-    }
-
-    /** Registers a stream emit middleware. */
-    addStreamEmitMiddleware(rpcName: string, streamName: string, mw: EmitMiddlewareFunc<T, any, any>): void {
-      const rpcMap = this.streamEmitMiddlewares.get(rpcName);
-      if (!rpcMap) {
-        return;
-      }
-
-      if (!rpcMap.has(streamName)) {
-        rpcMap.set(streamName, []);
-      }
-
-      rpcMap.get(streamName)?.push(mw);
-    }
-
-    /** Sets the global stream configuration. */
-    setGlobalStreamConfig(cfg: StreamConfig): void {
-      this.globalStreamConfig = { ...this.globalStreamConfig, ...cfg };
-      if (!this.globalStreamConfig.pingIntervalMs || this.globalStreamConfig.pingIntervalMs <= 0) {
-        this.globalStreamConfig.pingIntervalMs = 30000;
-      }
-    }
-
-    /** Sets the default stream configuration for one RPC service. */
-    setRPCStreamConfig(rpcName: string, cfg: StreamConfig): void {
-      this.rpcStreamConfigs.set(rpcName, cfg);
-    }
-
-    /** Sets the configuration for one stream. */
-    setStreamConfig(rpcName: string, streamName: string, cfg: StreamConfig): void {
-      const rpcConfigs = this.streamConfigs.get(rpcName);
-      rpcConfigs?.set(streamName, cfg);
-    }
-
-    /** Sets the global error handler. */
-    setGlobalErrorHandler(handler: ErrorHandlerFunc<T>): void {
-      this.globalErrorHandler = handler;
-    }
-
-    /** Sets an RPC-specific error handler. */
-    setRPCErrorHandler(rpcName: string, handler: ErrorHandlerFunc<T>): void {
-      this.rpcErrorHandlers.set(rpcName, handler);
-    }
-
-    /** Registers the implementation and deserializer for one procedure. */
-    setProcHandler(rpcName: string, procName: string, handler: ProcHandlerFunc<T, any, any>, deserializer: DeserializerFunc): void {
+    /** Registers a procedure handler with its input deserializer. */
+    setProcHandler(
+      rpcName: string,
+      procName: string,
+      handler: ProcHandlerFunc<T, any, any>,
+      deserializer: deserializerFunc,
+    ): void {
       const rpcHandlers = this.procHandlers.get(rpcName);
-      if (rpcHandlers) {
-        if (rpcHandlers.has(procName)) {
-          throw new Error("Procedure handler for " + rpcName + "." + procName + " is already registered");
-        }
-        rpcHandlers.set(procName, handler);
+      if (!rpcHandlers) {
+        throw new Error("Unknown RPC service: " + rpcName);
       }
 
+      if (rpcHandlers.has(procName)) {
+        throw new Error("Procedure handler for " + rpcName + "." + procName + " is already registered");
+      }
+
+      rpcHandlers.set(procName, handler);
       this.procDeserializers.get(rpcName)?.set(procName, deserializer);
     }
 
-    /** Registers the implementation and deserializer for one stream. */
-    setStreamHandler(rpcName: string, streamName: string, handler: StreamHandlerFunc<T, any, any>, deserializer: DeserializerFunc): void {
-      const rpcHandlers = this.streamHandlers.get(rpcName);
-      if (rpcHandlers) {
-        if (rpcHandlers.has(streamName)) {
-          throw new Error("Stream handler for " + rpcName + "." + streamName + " is already registered");
-        }
-        rpcHandlers.set(streamName, handler);
-      }
-
-      this.streamDeserializers.get(rpcName)?.set(streamName, deserializer);
+    /** Sets the global error handler. */
+    setGlobalErrorHandler(fn: ErrorHandlerFunc<T>): void {
+      this.globalErrorHandler = fn;
     }
 
-    /** Handles one incoming RPC request. */
-    async handleRequest(props: T, rpcName: string, operationName: string, adapter: HTTPAdapter): Promise<void> {
+    /** Sets an RPC-specific error handler. */
+    setRPCErrorHandler(rpcName: string, fn: ErrorHandlerFunc<T>): void {
+      this.rpcErrorHandlers.set(rpcName, fn);
+    }
+
+    /**
+     * Caps request body bytes accepted per procedure call.
+     * Bodies beyond the cap fail closed with an ok:false envelope before any
+     * handler or middleware runs. Values <= 0 restore the 4 MiB default.
+     */
+    setMaxRequestBodyBytes(n: number): void {
+      this.maxRequestBodyBytes = n > 0 ? n : defaultMaxRequestBodyBytes;
+    }
+
+    /** Returns the active request body cap for adapter wiring. */
+    getMaxRequestBodyBytes(): number {
+      return this.maxRequestBodyBytes;
+    }
+
+    /**
+     * Resolves an incoming RPC segment to its canonical procedure definition.
+     * The RPC segment matches the VPP-2 lowerFirst transport form.
+     */
+    private lookupProc(
+      rpcName: string,
+      procName: string,
+    ): { proc: ProcDefinition; rpcName: string } | undefined {
+      for (const [canonicalRPC, procs] of this.procDefs) {
+        const proc = procs.get(procName);
+        if (proc && (canonicalRPC === rpcName || proc.rpcRoute === rpcName)) {
+          return { proc, rpcName: canonicalRPC };
+        }
+      }
+
+      return undefined;
+    }
+
+    /** Handles one incoming procedure request. */
+    async handleRequest(props: T, rpcName: string, procName: string, adapter: HTTPAdapter): Promise<void> {
       if (!adapter) {
         throw new Error("HTTPAdapter is required");
       }
@@ -407,21 +336,22 @@ const SERVER_RUNTIME = dedent(/* ts */ `
       } catch (error) {
         this.writeProcResponse(adapter, {
           ok: false,
-          error: new VdlError({
-            message: "Invalid request body",
-            details: { originalError: String(error) },
-          }),
+          error: this.toBodyError(error),
         });
         return;
       }
 
-      const operation = this.operationDefs.get(rpcName)?.get(operationName);
-      if (!operation) {
+      if (rawInput === undefined || rawInput === null || rawInput === "") {
+        rawInput = {};
+      }
+
+      const resolved = this.lookupProc(rpcName, procName);
+      if (!resolved) {
         this.writeProcResponse(adapter, {
           ok: false,
           error: new VdlError({
-            message: "Invalid operation: " + rpcName + "." + operationName,
-            code: "INVALID_OPERATION",
+            message: "Invalid procedure: " + rpcName + "." + procName,
+            code: "INVALID_PROCEDURE",
             category: "ClientError",
           }),
         });
@@ -435,26 +365,38 @@ const SERVER_RUNTIME = dedent(/* ts */ `
         props,
         rawInput,
         abortController.signal,
-        operation,
+        cloneProcDefinition(resolved.proc),
       );
-
-      if (operation.type === "stream") {
-        await this.handleStreamRequest(ctx, rpcName, operationName, adapter);
-        return;
-      }
 
       let response: Response<unknown>;
       try {
-        const output = await this.handleProcRequest(ctx, rpcName, operationName);
-        response = { ok: true, output };
+        const output = await this.handleProcRequest(ctx, resolved.rpcName, resolved.proc.name);
+        response = resolved.proc.hasOutput
+          ? { ok: true, output }
+          : ({ ok: true } as Response<unknown>);
       } catch (error) {
         response = {
           ok: false,
-          error: this.resolveErrorHandler(rpcName)(ctx, error),
+          error: this.resolveErrorHandler(resolved.rpcName)(ctx, error),
         };
       }
 
       this.writeProcResponse(adapter, response);
+    }
+
+    /**
+     * Maps body read failures to public envelopes.
+     * Oversized bodies fail closed before any handler runs.
+     */
+    private toBodyError(error: unknown): VdlError {
+      if (String((error as Error)?.message ?? error).includes("too large")) {
+        return new VdlError({ message: "Request body too large" });
+      }
+
+      return new VdlError({
+        message: "Invalid request body",
+        details: { originalError: String(error) },
+      });
     }
 
     /** Resolves the effective error handler for one RPC service. */
@@ -468,7 +410,13 @@ const SERVER_RUNTIME = dedent(/* ts */ `
         return this.globalErrorHandler;
       }
 
-      return (_ctx, error) => asError(error);
+      // Default: sanitized. Internal details never reach the client.
+      // VdlError failures (validation, handler errors) pass through untouched.
+      // Custom handlers receive the raw error and decide what to expose.
+      return (_ctx, error) =>
+        error instanceof VdlError
+          ? error
+          : new VdlError({ message: "Internal error" });
     }
 
     /** Executes one procedure including all middleware layers. */
@@ -504,128 +452,17 @@ const SERVER_RUNTIME = dedent(/* ts */ `
       return next(c);
     }
 
-    /** Executes one stream including middleware, emission, and SSE lifecycle handling. */
-    private async handleStreamRequest(c: HandlerContext<T, unknown>, rpcName: string, streamName: string, adapter: HTTPAdapter): Promise<void> {
-      const baseHandler = this.streamHandlers.get(rpcName)?.get(streamName);
-      const deserialize = this.streamDeserializers.get(rpcName)?.get(streamName);
-      if (!baseHandler || !deserialize) {
-        this.writeProcResponse(adapter, {
-          ok: false,
-          error: new VdlError({
-            message: rpcName + "." + streamName + " not implemented",
-            code: "NOT_IMPLEMENTED",
-          }),
-        });
-        return;
-      }
-
-      try {
-        c.input = await deserialize(c.input);
-      } catch (error) {
-        this.writeProcResponse(adapter, {
-          ok: false,
-          error: asError(error),
-        });
-        return;
-      }
-
-      adapter.setHeader("Content-Type", "text/event-stream");
-      adapter.setHeader("Cache-Control", "no-cache");
-      adapter.setHeader("Connection", "keep-alive");
-
-      let closed = false;
-      adapter.onClose(() => {
-        closed = true;
-      });
-
-      /** Writes to the adapter only while the connection remains open. */
-      const safeWrite = (data: string) => {
-        if (closed || c.signal.aborted) {
-          return;
-        }
-        adapter.write(data);
-        adapter.flush?.();
-      };
-
-      /** Resolves ping interval precedence: global -> RPC -> stream. */
-      let pingInterval = this.globalStreamConfig.pingIntervalMs || 30000;
-      const rpcConfig = this.rpcStreamConfigs.get(rpcName);
-      if (rpcConfig?.pingIntervalMs) {
-        pingInterval = rpcConfig.pingIntervalMs;
-      }
-      const streamConfig = this.streamConfigs.get(rpcName)?.get(streamName);
-      if (streamConfig?.pingIntervalMs) {
-        pingInterval = streamConfig.pingIntervalMs;
-      }
-      if (pingInterval <= 0) {
-        pingInterval = 30000;
-      }
-
-      /** Emits SSE heartbeat comments to keep intermediaries from timing out idle streams. */
-      const pingTimer = setInterval(() => {
-        if (closed || c.signal.aborted) {
-          clearInterval(pingTimer);
-          return;
-        }
-
-        safeWrite(": ping\\n\\n");
-      }, pingInterval);
-
-      /** Ensures timers are cleared and the adapter is always closed exactly once. */
-      const cleanup = () => {
-        clearInterval(pingTimer);
-        closed = true;
-        adapter.end();
-      };
-
-      /** Base emit function that serializes typed events into SSE data frames. */
-      const baseEmit: EmitFunc<T, any, unknown> = async (_ctx, output) => {
-        safeWrite("data: " + JSON.stringify({ ok: true, output }) + "\\n\\n");
-      };
-
-      /** Composed emit function after applying stream-level emit middleware. */
-      let emitFinal = baseEmit;
-      const emitMws = this.streamEmitMiddlewares.get(rpcName)?.get(streamName) ?? [];
-      for (let index = emitMws.length - 1; index >= 0; index -= 1) {
-        emitFinal = emitMws[index](emitFinal);
-      }
-
-      /** Composed request handler after applying stream, RPC, and global middleware. */
-      let next: GlobalHandlerFunc<T> = (ctx) =>
-        baseHandler(ctx as HandlerContext<T, any>, emitFinal) as Promise<unknown>;
-
-      const streamMws = this.streamMiddlewares.get(rpcName)?.get(streamName) ?? [];
-      if (streamMws.length > 0) {
-        let streamNext = baseHandler;
-        for (let index = streamMws.length - 1; index >= 0; index -= 1) {
-          streamNext = streamMws[index](streamNext);
-        }
-        next = (ctx) => streamNext(ctx as HandlerContext<T, any>, emitFinal) as Promise<unknown>;
-      }
-
-      const rpcMws = this.rpcMiddlewares.get(rpcName) ?? [];
-      for (let index = rpcMws.length - 1; index >= 0; index -= 1) {
-        next = rpcMws[index](next);
-      }
-
-      for (let index = this.globalMiddlewares.length - 1; index >= 0; index -= 1) {
-        next = this.globalMiddlewares[index](next);
-      }
-
-      try {
-        await next(c);
-      } catch (error) {
-        const mapped = this.resolveErrorHandler(rpcName)(c, error);
-        safeWrite("data: " + JSON.stringify({ ok: false, error: mapped }) + "\\n\\n");
-      } finally {
-        cleanup();
-      }
-    }
-
-    /** Writes one standard JSON procedure response. */
+    /**
+     * Writes one standard JSON procedure response with HTTP 200 semantics.
+     * Encoding failures fall back to a generic envelope.
+     */
     private writeProcResponse(adapter: HTTPAdapter, response: Response<unknown>): void {
       adapter.setHeader("Content-Type", "application/json");
-      adapter.write(JSON.stringify(response));
+      try {
+        adapter.write(JSON.stringify(response));
+      } catch {
+        adapter.write(GENERIC_ERROR_ENVELOPE);
+      }
       adapter.end();
     }
   }
