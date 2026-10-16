@@ -1,4 +1,4 @@
-@rpc
+@httpRpc
 type Greeter {
   @proc
   hello {
@@ -23,7 +23,7 @@ type Greeter {
   }
 }
 
-@rpc
+@httpRpc
 type Calculator {
   @proc
   add {

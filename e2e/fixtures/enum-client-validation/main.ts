@@ -46,13 +46,6 @@ async function main() {
     .procs.echoNested()
     .handle(async ({ input }) => ({ nested: input.nested }));
 
-  server.rpcs
-    .service()
-    .streams.colorStream()
-    .handle(async (c, emit) => {
-      await emit(c, { color: c.input.color });
-    });
-
   const handler = createNodeHandler(server, undefined, { prefix: "/rpc" });
 
   const httpServer = createServer(async (req, res) => {
@@ -246,19 +239,6 @@ async function main() {
       assertClientValidationError(e, "Priority");
     }
     console.log("  PASS: Client rejects deeply nested invalid enum");
-
-    // ========== Test 12: Invalid enum in stream should be rejected by client ==========
-    console.log("Test 12: Client rejects invalid enum in stream...");
-    try {
-      client.rpcs
-        .service()
-        .streams.colorStream()
-        .execute({ color: "Pink" as any });
-      throw new Error("Expected client to reject invalid enum");
-    } catch (e) {
-      assertClientValidationError(e, "Color");
-    }
-    console.log("  PASS: Client rejects invalid enum in stream");
 
     console.log("\nSuccess: All client-side enum validation tests passed!");
   } catch (e) {

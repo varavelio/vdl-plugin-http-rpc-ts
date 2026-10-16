@@ -1,3 +1,4 @@
+// Fixture simple-rpc proves the basic request-response round-trip over Node HTTP.
 import { createServer } from "node:http";
 import { createNodeHandler } from "./gen/adapters/node.ts";
 import { NewClient } from "./gen/client.ts";

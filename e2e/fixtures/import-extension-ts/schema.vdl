@@ -1,5 +1,5 @@
 // Tests that generated imports work with import_extension: ".ts"
-@rpc
+@httpRpc
 type Echo {
   @proc
   say {

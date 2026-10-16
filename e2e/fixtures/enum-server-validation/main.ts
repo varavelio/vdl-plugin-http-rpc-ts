@@ -49,13 +49,6 @@ async function main() {
     .procs.echoNested()
     .handle(async ({ input }) => ({ nested: input.nested }));
 
-  server.rpcs
-    .service()
-    .streams.colorStream()
-    .handle(async (c, emit) => {
-      await emit(c, { color: c.input.color });
-    });
-
   const handler = createNodeHandler(server, undefined, { prefix: "/rpc" });
 
   const httpServer = createServer(async (req, res) => {
@@ -246,16 +239,6 @@ async function main() {
     );
     console.log("  PASS: Deeply nested invalid enum rejected");
 
-    // ========== Test 13: Invalid enum in stream should be rejected ==========
-    console.log("Test 13: Invalid enum in stream...");
-    await testStreamInvalidRequest(
-      baseUrl,
-      "/Service/colorStream",
-      { color: "Pink" },
-      "Color",
-    );
-    console.log("  PASS: Invalid enum in stream rejected");
-
     console.log("\nSuccess: All enum validation tests passed!");
   } catch (e) {
     console.error("Test failed:", e);
@@ -264,44 +247,6 @@ async function main() {
 
   httpServer.close();
   process.exit(0);
-}
-
-async function testStreamInvalidRequest(
-  baseUrl: string,
-  path: string,
-  payload: unknown,
-  expectedEnumName: string,
-) {
-  const resp = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  // Invalid stream input is rejected before the SSE channel is established,
-  // so the server returns a normal JSON error envelope instead of an SSE event.
-  const result = (await resp.json()) as {
-    ok: boolean;
-    error?: { code?: string; message?: string };
-  };
-
-  if (result.ok) {
-    throw new Error(
-      `Expected validation error for invalid ${expectedEnumName}, but request succeeded`,
-    );
-  }
-
-  if (result.error?.code !== "INVALID_INPUT") {
-    throw new Error(
-      `Expected INVALID_INPUT error code, got: ${result.error?.code} (message: ${result.error?.message})`,
-    );
-  }
-
-  if (!result.error.message?.includes(expectedEnumName)) {
-    throw new Error(
-      `Expected error message to mention "${expectedEnumName}", got: ${result.error?.message}`,
-    );
-  }
 }
 
 async function testRawInvalidRequest(

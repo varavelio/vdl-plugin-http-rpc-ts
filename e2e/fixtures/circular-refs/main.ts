@@ -1,3 +1,4 @@
+// Fixture circular-refs proves recursive and optional types round-trip through procedures.
 import { createServer } from "node:http";
 import { createNodeHandler } from "./gen/adapters/node.ts";
 import { NewClient } from "./gen/client.ts";

@@ -8,7 +8,7 @@ type Person {
   address Address
 }
 
-@rpc
+@httpRpc
 type Service {
   @proc
   validatePerson {

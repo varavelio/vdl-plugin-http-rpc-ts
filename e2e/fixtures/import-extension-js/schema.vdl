@@ -1,5 +1,5 @@
 // Tests that generated imports work with import_extension: ".js"
-@rpc
+@httpRpc
 type Echo {
   @proc
   say {

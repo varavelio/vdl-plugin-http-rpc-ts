@@ -1,9 +1,31 @@
-@rpc
+@httpRpc
 type Service {
   @proc
-  ping {
-    input {}
+  ping {}
 
-    output {}
+  @proc
+  clearCache {
+    input {
+      namespace string
+    }
+  }
+
+  @proc
+  rotateKeys {
+    output {
+      rotatedAt string
+    }
+  }
+
+  @proc
+  getUser {
+    input {
+      userId string
+    }
+
+    output {
+      id string
+      email string
+    }
   }
 }

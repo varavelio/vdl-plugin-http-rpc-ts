@@ -105,7 +105,7 @@ type Order {
   status string
 }
 
-@rpc
+@httpRpc
 type Service {
   @proc
   echoUser {

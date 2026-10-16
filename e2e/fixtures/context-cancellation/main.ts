@@ -1,9 +1,7 @@
-// Verifies context cancellation behavior: when the client cancels the AbortSignal
-// mid-stream, the server should stop sending events and clean up resources.
-
+// Verifies AbortSignal cancellation for procedures.
 import { createServer } from "node:http";
 import { createNodeHandler } from "./gen/adapters/node.ts";
-import { NewClient } from "./gen/client.ts";
+import { NewClient, VdlError } from "./gen/client.ts";
 import { Server } from "./gen/server.ts";
 
 function sleep(ms: number) {
@@ -11,25 +9,26 @@ function sleep(ms: number) {
 }
 
 async function main() {
-  let emitCount = 0;
   let cleanedUp = false;
 
   const server = new Server();
 
   server.rpcs
     .service()
-    .streams.counter()
-    .handle(async (c, emit) => {
+    .procs.run()
+    .handle(async (c) => {
       try {
-        for (let i = 0; ; i++) {
-          // Check if signal is aborted (similar to Go's ctx.Done())
+        for (let i = 0; i < 20; i++) {
           if (c.signal.aborted) {
-            return;
+            throw new VdlError({
+              message: "Request aborted",
+              category: "ClientError",
+              code: "ABORTED",
+            });
           }
-          await emit(c, { count: i });
-          emitCount++;
           await sleep(50);
         }
+        return { count: 42 };
       } finally {
         cleanedUp = true;
       }
@@ -54,56 +53,54 @@ async function main() {
   const baseUrl = `http://localhost:${addr.port}/rpc`;
   const client = NewClient(baseUrl).build();
 
-  // Create an AbortController to cancel the stream
-  const abortController = new AbortController();
-
-  const { stream } = client.rpcs
-    .service()
-    .streams.counter()
-    .withReconnect({ maxAttempts: 0 }) // Disable reconnection
-    .withSignal(abortController.signal)
-    .execute({});
-
-  // Receive a few events
-  let receivedCount = 0;
-  for await (const evt of stream) {
-    if (evt.ok) {
-      receivedCount++;
-      if (receivedCount >= 3) {
-        // Cancel after receiving 3 events
-        abortController.abort();
-        break;
-      }
-    } else {
-      // If error occurs due to cancellation, that's expected
-      break;
+  // Pre-aborted signal fails fast.
+  const preAborted = new AbortController();
+  preAborted.abort();
+  try {
+    await client.rpcs
+      .service()
+      .procs.run()
+      .withSignal(preAborted.signal)
+      .execute({});
+    console.error("expected pre-aborted call to fail");
+    process.exit(1);
+  } catch (e) {
+    if (!(e instanceof VdlError) || e.code !== "ABORTED") {
+      console.error("expected ABORTED, got:", e);
+      process.exit(1);
     }
   }
 
-  // Wait for cleanup
-  await sleep(200);
-
-  if (receivedCount < 3) {
-    console.error(
-      `expected at least 3 events before cancel, got ${receivedCount}`,
-    );
+  // Normal call succeeds.
+  const ok = await client.rpcs.service().procs.run().execute({});
+  if (ok.count !== 42) {
+    console.error("unexpected output:", ok);
     process.exit(1);
   }
 
+  // Mid-flight abort fails with ABORTED.
+  const midFlight = new AbortController();
+  const pending = client.rpcs
+    .service()
+    .procs.run()
+    .withSignal(midFlight.signal)
+    .execute({});
+  await sleep(100);
+  midFlight.abort();
+  try {
+    await pending;
+    console.error("expected mid-flight abort to fail");
+    process.exit(1);
+  } catch (e) {
+    if (!(e instanceof VdlError)) {
+      console.error("expected VdlError, got:", e);
+      process.exit(1);
+    }
+  }
+
+  await sleep(200);
   if (!cleanedUp) {
-    console.error("expected server handler to clean up after cancellation");
-    process.exit(1);
-  }
-
-  // Verify server stopped emitting (count should stabilize)
-  const countBefore = emitCount;
-  await sleep(200);
-  const countAfter = emitCount;
-
-  if (countAfter > countBefore + 2) {
-    console.error(
-      `server continued emitting after cancellation: before=${countBefore}, after=${countAfter}`,
-    );
+    console.error("expected server handler to run cleanup");
     process.exit(1);
   }
 

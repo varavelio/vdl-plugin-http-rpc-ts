@@ -22,7 +22,7 @@ enum HttpStatus {
   InternalError = "INTERNAL_SERVER_ERROR"
 }
 
-@rpc
+@httpRpc
 type Service {
   @proc
   echo {

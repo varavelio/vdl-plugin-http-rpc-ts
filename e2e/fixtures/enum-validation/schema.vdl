@@ -28,7 +28,7 @@ type Container {
   logLevel? LogLevel
 }
 
-@rpc
+@httpRpc
 type Service {
   // Echo valid enum values
   @proc

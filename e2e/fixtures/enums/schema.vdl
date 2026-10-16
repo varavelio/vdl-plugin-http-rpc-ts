@@ -9,7 +9,7 @@ enum Priority {
   High = 2
 }
 
-@rpc
+@httpRpc
 type Service {
   @proc
   test {

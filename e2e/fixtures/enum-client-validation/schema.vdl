@@ -42,7 +42,7 @@ type Nested {
   optSettings? OptionalSettings
 }
 
-@rpc
+@httpRpc
 type Service {
   // Test simple enum validation
   @proc
@@ -125,18 +125,6 @@ type Service {
 
     output {
       nested Nested
-    }
-  }
-
-  // Test stream with enum validation
-  @stream
-  colorStream {
-    input {
-      color Color
-    }
-
-    output {
-      color Color
     }
   }
 }

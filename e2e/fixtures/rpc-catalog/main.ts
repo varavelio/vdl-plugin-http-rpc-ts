@@ -1,5 +1,5 @@
-// Verifies VDLPaths, VDLProcedures, and VDLStreams catalog exports.
-import { VDLPaths, VDLProcedures, VDLStreams } from "./gen/client.ts";
+// Verifies VDLPaths and VDLProcs catalog exports.
+import { VDLPaths, VDLProcs } from "./gen/client.ts";
 
 function fail(name: string, expected: string, actual: string): never {
   console.error(`${name} mismatch: expected "${expected}", got "${actual}"`);
@@ -7,55 +7,29 @@ function fail(name: string, expected: string, actual: string): never {
 }
 
 function main() {
-  // Verify VDLPaths structure (only procs and streams, no service root path)
-  if (VDLPaths.MyService.myProc !== "/MyService/myProc") {
+  if (VDLPaths.MyService.myProc !== "/myService/myProc") {
     fail(
       "VDLPaths.MyService.myProc",
-      "/MyService/myProc",
+      "/myService/myProc",
       VDLPaths.MyService.myProc,
     );
   }
-  if (VDLPaths.MyService.myStream !== "/MyService/myStream") {
-    fail(
-      "VDLPaths.MyService.myStream",
-      "/MyService/myStream",
-      VDLPaths.MyService.myStream,
-    );
-  }
 
-  // Verify VDLProcedures contains MyProc
   let foundProc = false;
-  for (const op of VDLProcedures) {
+  for (const op of VDLProcs) {
     if (op.rpcName === "MyService" && op.name === "myProc") {
       foundProc = true;
-      // Verify path method
-      const expectedPath = "/MyService/myProc";
-      const actualPath = `/${op.rpcName}/${op.name}`;
-      if (actualPath !== expectedPath) {
-        fail("op path for MyProc", expectedPath, actualPath);
+      const expectedPath = "/myService/myProc";
+      if (op.path !== expectedPath) {
+        fail("op path for MyProc", expectedPath, op.path);
+      }
+      if (op.rpcRoute !== "myService") {
+        fail("op rpcRoute for MyProc", "myService", op.rpcRoute);
       }
     }
   }
   if (!foundProc) {
-    console.error("MyProc operation not found in VDLProcedures");
-    process.exit(1);
-  }
-
-  // Verify VDLStreams contains MyStream
-  let foundStream = false;
-  for (const op of VDLStreams) {
-    if (op.rpcName === "MyService" && op.name === "myStream") {
-      foundStream = true;
-      // Verify path method
-      const expectedPath = "/MyService/myStream";
-      const actualPath = `/${op.rpcName}/${op.name}`;
-      if (actualPath !== expectedPath) {
-        fail("op path for MyStream", expectedPath, actualPath);
-      }
-    }
-  }
-  if (!foundStream) {
-    console.error("MyStream operation not found in VDLStreams");
+    console.error("MyProc operation not found in VDLProcs");
     process.exit(1);
   }
 
