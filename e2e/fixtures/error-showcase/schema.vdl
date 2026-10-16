@@ -1,0 +1,21 @@
+@httpRpc
+type Shop {
+  @proc
+  getProduct {
+    input {
+      id string
+    }
+
+    output {
+      name string
+      price float
+    }
+  }
+
+  @proc
+  boom {
+    input {}
+
+    output {}
+  }
+}
