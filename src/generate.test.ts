@@ -44,25 +44,9 @@ function createBaseInput() {
                 ],
               },
             ),
-            field(
-              "events",
-              objectType([
-                field(
-                  "input",
-                  objectType([field("roomId", primitiveType("string"))]),
-                ),
-                field(
-                  "output",
-                  objectType([field("text", primitiveType("string"))]),
-                ),
-              ]),
-              {
-                annotations: [annotation("stream")],
-              },
-            ),
           ]),
           {
-            annotations: [annotation("rpc")],
+            annotations: [annotation("httpRpc")],
           },
         ),
       ],
@@ -90,7 +74,7 @@ describe("generate", () => {
       'import * as vdlTypes from "../types/index.js";',
     );
     expect(fileContent(output, "client.ts")).toContain(
-      "export const VDLProcedures: OperationDefinition[] = [",
+      "export const VDLProcs: ProcDefinition[] = [",
     );
     expect(fileContent(output, "client.ts")).toContain(
       "public readonly rpcs: ClientRPCRegistry;",
@@ -126,6 +110,49 @@ describe("generate", () => {
     expect(fileContent(output, "client.ts")).toContain(
       'this.intClient.setRPCRetryConfig("Messages", normalizeRetryConfig(config, 3));',
     );
+    expect(fileContent(output, "client.ts")).not.toContain("VDLProcedures");
+    expect(fileContent(output, "client.ts")).not.toContain("VDLStreams");
+    expect(fileContent(output, "client.ts")).not.toContain("StreamRegistry");
+    expect(fileContent(output, "client.ts")).toContain("/messages/sendMessage");
+  });
+
+  it("exposes typed input accessors for middleware and interceptors", () => {
+    const output = generate({
+      ...createBaseInput(),
+      options: {
+        ...createBaseInput().options,
+        target: "client",
+      },
+    });
+
+    expect(output.errors).toBeUndefined();
+    expect(fileContent(output, "client.ts")).toContain(
+      "export function inputAs<O>(input: unknown): O | undefined",
+    );
+  });
+
+  it("caps response body size on the client", () => {
+    const output = generate({
+      ...createBaseInput(),
+      options: {
+        ...createBaseInput().options,
+        target: "client",
+      },
+    });
+
+    expect(output.errors).toBeUndefined();
+    expect(fileContent(output, "client.ts")).toContain(
+      "withMaxResponseBodyBytes(n: number): clientBuilder",
+    );
+    expect(fileContent(output, "client.ts")).toContain(
+      "withMaxResponseBodyBytes(n: number): ClientBuilder",
+    );
+    expect(fileContent(output, "client.ts")).toContain(
+      "Response body too large",
+    );
+    expect(fileContent(output, "client.ts")).toContain(
+      "export function cloneProcDefinition(proc: ProcDefinition): ProcDefinition",
+    );
   });
 
   it("generates the server target", () => {
@@ -144,13 +171,38 @@ describe("generate", () => {
       "adapters/fetch.ts",
     ]);
     expect(fileContent(output, "server.ts")).toContain(
-      "get annotations(): OperationAnnotation[]",
+      "get annotations(): Annotation[]",
     );
     expect(fileContent(output, "server.ts")).toContain(
-      "export const VDLStreams: OperationDefinition[] = [",
+      "export const VDLProcs: ProcDefinition[] = [",
+    );
+    expect(fileContent(output, "server.ts")).not.toContain("VDLStreams");
+    expect(fileContent(output, "server.ts")).not.toContain("StreamHandlerFunc");
+    expect(fileContent(output, "server.ts")).not.toContain("flush");
+    expect(fileContent(output, "server.ts")).toContain(
+      "HTTPAdapter defines the interface required by the RPC server",
     );
     expect(fileContent(output, "server.ts")).toContain(
-      "HTTPAdapter defines the interface required by VDL server to handle",
+      "get rpcRoute(): string",
+    );
+    expect(fileContent(output, "server.ts")).toContain("get path(): string");
+    expect(fileContent(output, "server.ts")).toContain(
+      "inputAs<O>(): O | undefined",
+    );
+    expect(fileContent(output, "server.ts")).toContain(
+      "type deserializerFunc = (raw: unknown) => Promise<unknown>;",
+    );
+    expect(fileContent(output, "server.ts")).toContain(
+      "setMaxRequestBodyBytes(n: number): void",
+    );
+    expect(fileContent(output, "server.ts")).toContain(
+      "getMaxRequestBodyBytes(): number",
+    );
+    expect(fileContent(output, "server.ts")).toContain(
+      'new VdlError({ message: "Internal error" })',
+    );
+    expect(fileContent(output, "server.ts")).toContain(
+      '{"ok":false,"error":{"message":"Internal error"}}',
     );
     expect(fileContent(output, "adapters/node.ts")).toContain(
       "createNodeHandler",
@@ -158,8 +210,18 @@ describe("generate", () => {
     expect(fileContent(output, "adapters/node.ts")).toContain(
       "NodeAdapter implements HTTPAdapter for Node.js HTTP environments.",
     );
+    expect(fileContent(output, "adapters/node.ts")).toContain(
+      "METHOD_NOT_ALLOWED",
+    );
+    expect(fileContent(output, "adapters/node.ts")).toContain('Allow: "POST"');
+    expect(fileContent(output, "adapters/node.ts")).toContain(
+      "NodeAdapter requires a non-null request",
+    );
     expect(fileContent(output, "adapters/fetch.ts")).toContain(
       "FetchAdapter implements HTTPAdapter for Web Standards environments.",
+    );
+    expect(fileContent(output, "adapters/fetch.ts")).toContain(
+      "FetchAdapter requires a non-null Request",
     );
   });
 
@@ -181,7 +243,7 @@ describe("generate", () => {
                   ),
                 ]),
                 {
-                  annotations: [annotation("rpc")],
+                  annotations: [annotation("httpRpc")],
                 },
               ),
             ],
@@ -193,7 +255,7 @@ describe("generate", () => {
         }),
       ),
     ).toThrowError(
-      'Field "input" in operation "Broken.oops" must be an object type when present.',
+      'Field "input" in operation "Broken.oops" must be an inline object type when present.',
     );
   });
 

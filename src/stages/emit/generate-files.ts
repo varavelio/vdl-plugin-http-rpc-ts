@@ -10,7 +10,7 @@ import { generateNodeAdapterFile } from "./files/server/node-adapter";
  * Emits the target-specific TypeScript source files for the prepared RPC context.
  */
 export function generateFiles(context: GeneratorContext): PluginOutputFile[] {
-  if (context.procedures.length === 0 && context.streams.length === 0) {
+  if (context.procs.length === 0) {
     return [];
   }
 
