@@ -1,15 +1,15 @@
 <p align="center">
   <img
-    src="https://raw.githubusercontent.com/varavelio/vdl/9cb8432f972f986ba91ffa1e4fe82220a8aa373f/assets/png/vdl.png"
+    src="https://cdn.jsdelivr.net/gh/varavelio/vdl@9cb843/assets/png/vdl.png"
     alt="VDL logo"
     width="130"
   />
 </p>
 
-<h1 align="center">VDL RPC TypeScript Plugin</h1>
+<h1 align="center">VDL HTTP RPC TypeScript Plugin</h1>
 
 <p align="center">
-  Generate TypeScript <strong>RPC clients</strong> and <strong>RPC servers</strong> from annotation-based VDL services.
+  Generate TypeScript <strong>HTTP RPC clients</strong> and <strong>HTTP RPC servers</strong> from annotation-based VDL services.
 </p>
 
 <p align="center">
@@ -21,11 +21,13 @@
   </a>
 </p>
 
-This plugin is RPC-only.
+<p align="center">
+  Strictly follows <a href="https://vdl.varavel.com/docs/protocols/http-rpc/">VPP-2: HTTP-RPC</a>.
+</p>
 
-It does not generate business types, enums, or constants. Those come from [`varavelio/vdl-plugin-ts`](https://github.com/varavelio/vdl-plugin-ts), and this plugin references them through `typesImport`.
+This plugin generates HTTP RPC code only.
 
-All examples below use `varavelio/vdl-plugin-rpc-ts@v0.1.0`.
+Data models come from [`varavelio/vdl-plugin-ts`](https://github.com/varavelio/vdl-plugin-ts): Generate types first, then point this plugin at them.
 
 ## Quick Start
 
@@ -38,7 +40,7 @@ const config = {
   version 1
   plugins [
     {
-      src "varavelio/vdl-plugin-ts@v0.1.4"
+      src "varavelio/vdl-plugin-ts@<version>" // Use a version from plugin releases
       schema "./schema.vdl"
       outDir "./generated/types"
       options {
@@ -46,7 +48,7 @@ const config = {
       }
     }
     {
-      src "varavelio/vdl-plugin-rpc-ts@v0.1.0"
+      src "varavelio/vdl-plugin-http-rpc-ts@<version>" // Use a version from plugin releases
       schema "./schema.vdl"
       outDir "./generated/client"
       options {
@@ -56,7 +58,7 @@ const config = {
       }
     }
     {
-      src "varavelio/vdl-plugin-rpc-ts@v0.1.0"
+      src "varavelio/vdl-plugin-http-rpc-ts@<version>" // Use a version from plugin releases
       schema "./schema.vdl"
       outDir "./generated/server"
       options {
