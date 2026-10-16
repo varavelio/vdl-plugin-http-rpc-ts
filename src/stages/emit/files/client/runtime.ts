@@ -21,29 +21,9 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
     /** Original input payload. */
     input: unknown;
     /** Resolved operation metadata, including annotations. */
-    operation?: OperationDefinition;
+    operation?: ProcDefinition;
     /** Whether the generated runtime would retry without custom logic. */
     defaultRetryable: boolean;
-  }
-
-  /**
-   * Context provided to a reconnect decider.
-   */
-  export interface ReconnectDecisionContext {
-    /** Current reconnect attempt number, starting at 1. */
-    attempt: number;
-    /** Maximum configured reconnect attempts. */
-    maxAttempts: number;
-    /** Error that triggered the reconnect evaluation. */
-    error: VdlError;
-    /** Original subscription input payload. */
-    input: unknown;
-    /** Resolved operation metadata, including annotations. */
-    operation?: OperationDefinition;
-    /** Calculated delay before the next reconnect attempt. */
-    delayMs: number;
-    /** Whether the generated runtime would reconnect without custom logic. */
-    defaultReconnectable: boolean;
   }
 
   /**
@@ -72,27 +52,10 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
   }
 
   /**
-   * Controls automatic reconnection behavior for streams.
-   *
-   * When a stream connection is lost due to network issues or server errors,
-   * the client can automatically attempt to reconnect with exponential backoff.
-   */
-  export interface ReconnectConfig {
-    maxAttempts: number;
-    initialDelayMs: number;
-    maxDelayMs: number;
-    delayMultiplier: number;
-    jitter: number;
-    shouldReconnect?: (
-      context: ReconnectDecisionContext,
-    ) => boolean | Promise<boolean>;
-  }
-
-  /**
    * A function that adds or modifies headers before each request.
    *
    * Header providers are executed in this order: global, RPC-level, operation-level.
-   * They run before every request attempt, including retries and reconnects.
+   * They run before every request attempt, including retries.
    */
   export type HeaderProvider = (
     headers: Record<string, string>,
@@ -105,8 +68,8 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
     rpcName: string;
     operationName: string;
     input: unknown;
-    type: OperationType;
-    operation?: OperationDefinition;
+    type: "proc";
+    operation?: ProcDefinition;
   }
 
   /** Final function invoked by the interceptor chain. */
@@ -125,7 +88,15 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
   export interface FetchLikeResponse {
     ok: boolean;
     status: number;
-    body?: ReadableStream<Uint8Array> | null;
+    body?: {
+      getReader(): {
+        read(): Promise<{ done: boolean; value?: Uint8Array }>;
+        cancel(): Promise<void>;
+      };
+    } | null;
+    headers?: {
+      get(name: string): string | null;
+    };
     json(): Promise<any>;
     text(): Promise<string>;
   }
@@ -155,20 +126,6 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
   };
 
   /**
-   * Default reconnect config for streams.
-   */
-  const defaultReconnectConfig: ReconnectConfig = {
-    maxAttempts: 30,
-    initialDelayMs: 1000,
-    maxDelayMs: 30000,
-    delayMultiplier: 1.5,
-    jitter: 0.2,
-  };
-
-  /** Default maximum message size for streams: 4MB. */
-  const defaultMaxMessageSize = 4 * 1024 * 1024;
-
-  /**
    * Adds random jitter to a delay to prevent thundering herd effects.
    */
   function applyJitter(delayMs: number, jitterFactor: number): number {
@@ -187,23 +144,6 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
    * Calculates exponential backoff delay for retry attempts.
    */
   function calculateBackoff(config: RetryConfig, attempt: number): number {
-    let delay = config.initialDelayMs;
-    for (let index = 1; index < attempt; index += 1) {
-      delay *= config.delayMultiplier;
-    }
-    if (delay > config.maxDelayMs) {
-      delay = config.maxDelayMs;
-    }
-    return applyJitter(delay, config.jitter);
-  }
-
-  /**
-   * Calculates exponential backoff delay for stream reconnection attempts.
-   */
-  function calculateReconnectBackoff(
-    config: ReconnectConfig,
-    attempt: number,
-  ): number {
     let delay = config.initialDelayMs;
     for (let index = 1; index < attempt; index += 1) {
       delay *= config.delayMultiplier;
@@ -241,45 +181,74 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
   }
 
   /**
-   * Normalizes reconnect config input into safe runtime values.
+   * Default maximum response body size: 4 MiB.
    */
-  function normalizeReconnectConfig(
-    config: Partial<ReconnectConfig>,
-    defaultAttempts = 30,
-  ): ReconnectConfig {
-    return {
-      maxAttempts: Math.max(0, config.maxAttempts ?? defaultAttempts),
-      initialDelayMs: Math.max(
-        0,
-        config.initialDelayMs ?? defaultReconnectConfig.initialDelayMs,
-      ),
-      maxDelayMs: Math.max(
-        0,
-        config.maxDelayMs ?? defaultReconnectConfig.maxDelayMs,
-      ),
-      delayMultiplier: Math.max(
-        1,
-        config.delayMultiplier ?? defaultReconnectConfig.delayMultiplier,
-      ),
-      jitter: Math.max(
-        0,
-        Math.min(1, config.jitter ?? defaultReconnectConfig.jitter),
-      ),
-      ...(config.shouldReconnect
-        ? { shouldReconnect: config.shouldReconnect }
-        : {}),
-    };
-  }
-
-  // =============================================================================
-  // Internal Client
-  // =============================================================================
+  const defaultMaxResponseBodyBytes = 4 * 1024 * 1024;
 
   /**
-   * Core HTTP client engine used by generated VDL client wrappers.
+   * Reads a response body as text without exceeding the byte cap.
+   * Prefers the declared content length when present, then pumps the
+   * reader when available and falls back to text() otherwise.
+   */
+  async function readBoundedText(
+    response: FetchLikeResponse,
+    maxBytes: number,
+  ): Promise<string> {
+    const declared = response.headers?.get("content-length");
+    if (declared !== undefined && declared !== null && declared !== "") {
+      const parsed = Number.parseInt(declared, 10);
+      if (Number.isFinite(parsed) && parsed > maxBytes) {
+        throw new Error("Response body too large");
+      }
+    }
+
+    const reader = response.body?.getReader?.();
+    if (!reader) {
+      const text = await response.text();
+      if (new TextEncoder().encode(text).length > maxBytes) {
+        throw new Error("Response body too large");
+      }
+      return text;
+    }
+
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value) {
+          total += value.length;
+          if (total > maxBytes) {
+            throw new Error("Response body too large");
+          }
+          chunks.push(value);
+        }
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // The stream may already be closed.
+      }
+    }
+
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return new TextDecoder().decode(merged);
+  }
+
+  /**
+   * Internal JSON-RPC client executing VPP-2 procedures.
    *
    * This class handles request execution, retry logic, timeout handling,
-   * stream connections, header providers, and interceptors.
+   * header providers, and interceptors.
    *
    * Do not instantiate directly. Use the generated client builder.
    *
@@ -294,14 +263,10 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
 
     /**
      * Registry of valid operations.
-     * Structure: rpcName → operationName → OperationType
+     * Structure: rpcName -> procName -> ProcDefinition
      * Used to validate requests and fail fast on typos.
      */
-    private operationDefs: Map<string, Map<string, OperationDefinition>>;
-
-    // ---------------------------------------------------------------------------
-    // Dynamic Components
-    // ---------------------------------------------------------------------------
+    private operationDefs: Map<string, Map<string, ProcDefinition>>;
 
     /** Global header providers applied to all requests. */
     private headerProviders: HeaderProvider[] = [];
@@ -318,17 +283,13 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
 
     private globalRetryConf: RetryConfig | null = null;
     private globalTimeoutConf: TimeoutConfig | null = null;
-    private globalReconnectConf: ReconnectConfig | null = null;
-    private globalMaxMessageSize: number = 0;
-
+    private maxResponseBodyBytes: number = defaultMaxResponseBodyBytes;
     // ---------------------------------------------------------------------------
     // Per-RPC Default Configurations
     // ---------------------------------------------------------------------------
 
     private rpcRetryConf: Map<string, RetryConfig> = new Map();
     private rpcTimeoutConf: Map<string, TimeoutConfig> = new Map();
-    private rpcReconnectConf: Map<string, ReconnectConfig> = new Map();
-    private rpcMaxMessageSize: Map<string, number> = new Map();
 
     // ---------------------------------------------------------------------------
     // Constructor
@@ -342,14 +303,14 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
      */
     constructor(
       baseURL: string,
-      procDefs: OperationDefinition[],
-      streamDefs: OperationDefinition[],
+      procDefs: ProcDefinition[],
       opts: internalClientOption[],
     ) {
       this.verifyRuntimeDeps();
 
       this.baseURL = baseURL.replace(/[/]+$/gu, "");
       this.fetchFn = (globalThis.fetch ?? null) as FetchLike;
+      this.maxResponseBodyBytes = defaultMaxResponseBodyBytes;
       this.operationDefs = new Map();
 
       const ensureRPC = (rpcName: string) => {
@@ -359,11 +320,6 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
       };
 
       for (const def of procDefs) {
-        ensureRPC(def.rpcName);
-        this.operationDefs.get(def.rpcName)?.set(def.name, def);
-      }
-
-      for (const def of streamDefs) {
         ensureRPC(def.rpcName);
         this.operationDefs.get(def.rpcName)?.set(def.name, def);
       }
@@ -387,12 +343,6 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
 
       if (typeof AbortController !== "function") {
         missing.push("AbortController");
-      }
-      if (typeof ReadableStream === "undefined") {
-        missing.push("ReadableStream");
-      }
-      if (typeof TextDecoder !== "function") {
-        missing.push("TextDecoder");
       }
 
       if (missing.length > 0) {
@@ -433,14 +383,9 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
       this.globalTimeoutConf = normalizeTimeoutConfig(conf);
     }
 
-    /** Sets the global default reconnect configuration for streams. */
-    setGlobalReconnectConfig(conf: ReconnectConfig): void {
-      this.globalReconnectConf = normalizeReconnectConfig(conf, conf.maxAttempts);
-    }
-
-    /** Sets the global default maximum message size for streams. */
-    setGlobalMaxMessageSize(size: number): void {
-      this.globalMaxMessageSize = size;
+    /** Caps response body bytes accepted per call. Values <= 0 restore the default. */
+    setMaxResponseBodyBytes(n: number): void {
+      this.maxResponseBodyBytes = n > 0 ? n : defaultMaxResponseBodyBytes;
     }
 
     // ---------------------------------------------------------------------------
@@ -457,16 +402,6 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
       this.rpcTimeoutConf.set(rpcName, conf);
     }
 
-    /** Sets the default reconnect config for a specific RPC. */
-    setRPCReconnectConfig(rpcName: string, conf: ReconnectConfig) {
-      this.rpcReconnectConf.set(rpcName, conf);
-    }
-
-    /** Sets the default max message size for a specific RPC. */
-    setRPCMaxMessageSize(rpcName: string, size: number) {
-      this.rpcMaxMessageSize.set(rpcName, size);
-    }
-
     /** Adds a header provider for a specific RPC. */
     setRPCHeaderProvider(rpcName: string, provider: HeaderProvider) {
       if (!this.rpcHeaderProviders.has(rpcName)) {
@@ -476,18 +411,17 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
     }
 
     /**
-     * Resolves one operation definition and verifies its expected kind.
+     * Resolves one procedure definition.
      */
     private getOperation(
       rpcName: string,
       operationName: string,
-      expectedType: OperationType,
-    ): OperationDefinition | undefined {
-      const operation = this.operationDefs.get(rpcName)?.get(operationName);
-      if (!operation || operation.type !== expectedType) {
+    ): ProcDefinition | undefined {
+      const proc = this.operationDefs.get(rpcName)?.get(operationName);
+      if (!proc) {
         return undefined;
       }
-      return operation;
+      return cloneProcDefinition(proc);
     }
 
     /**
@@ -530,56 +464,7 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
     }
 
     /**
-     * Resolves the effective reconnect configuration for a stream.
-     * Priority: operation-level > RPC-level > global > built-in defaults.
-     */
-    private mergeReconnectConfig(
-      rpcName: string,
-      opConf?: ReconnectConfig,
-    ): ReconnectConfig {
-      return {
-        ...defaultReconnectConfig,
-        ...(this.globalReconnectConf ?? {}),
-        ...(this.rpcReconnectConf.get(rpcName) ?? {}),
-        ...(opConf ?? {}),
-        ...(opConf?.shouldReconnect
-          ? { shouldReconnect: opConf.shouldReconnect }
-          : this.rpcReconnectConf.get(rpcName)?.shouldReconnect
-            ? {
-                shouldReconnect:
-                  this.rpcReconnectConf.get(rpcName)?.shouldReconnect,
-              }
-          : this.globalReconnectConf?.shouldReconnect
-            ? { shouldReconnect: this.globalReconnectConf.shouldReconnect }
-            : {}),
-      };
-    }
-
-    /**
-     * Resolves the effective maximum message size for a stream.
-     * Priority: operation-level > RPC-level > global > built-in defaults.
-     */
-    private mergeMaxMessageSize(rpcName: string, opSize?: number): number {
-      if (opSize && opSize > 0) {
-        return opSize;
-      }
-
-      if (this.rpcMaxMessageSize.has(rpcName)) {
-        const rpcSize = this.rpcMaxMessageSize.get(rpcName);
-        if (rpcSize && rpcSize > 0) {
-          return rpcSize;
-        }
-      }
-
-      if (this.globalMaxMessageSize > 0) {
-        return this.globalMaxMessageSize;
-      }
-
-      return defaultMaxMessageSize;
-    }
-
-    /**
-     * Applies all header providers to a request's headers.
+     * Applies all header providers to a request headers.
      * Order: global providers -> RPC providers -> operation providers.
      */
     private async applyHeaders(
@@ -632,20 +517,6 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
     }
 
     /**
-     * Evaluates whether the current stream failure should trigger reconnect.
-     */
-    private async shouldReconnect(
-      config: ReconnectConfig,
-      context: ReconnectDecisionContext,
-    ): Promise<boolean> {
-      if (!config.shouldReconnect) {
-        return context.defaultReconnectable;
-      }
-
-      return await config.shouldReconnect(context);
-    }
-
-    /**
      * Executes one procedure call with retries, timeout, headers, and interceptors.
      */
     async callProc(
@@ -668,7 +539,7 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
         };
       }
 
-      const operation = this.getOperation(rpcName, procName, "proc");
+      const operation = this.getOperation(rpcName, procName);
       const reqInfo: RequestInfo = {
         rpcName,
         operationName: procName,
@@ -716,7 +587,7 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
 
         const retryConf = this.mergeRetryConfig(req.rpcName, opRetryConf);
         const timeoutConf = this.mergeTimeoutConfig(req.rpcName, opTimeoutConf);
-        const url = this.baseURL + "/" + req.rpcName + "/" + req.operationName;
+        const url = this.baseURL + (operation.path as string);
         let lastError: VdlError | null = null;
 
         for (let attempt = 1; attempt <= retryConf.maxAttempts; attempt += 1) {
@@ -765,6 +636,32 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
               body: payload,
               signal: abortController.signal,
             });
+
+            if (!fetchResponse) {
+              const error = new VdlError({
+                message: "Empty response from transport",
+                category: "HTTPError",
+                code: "BAD_RESPONSE",
+              });
+              const canRetry =
+                attempt < retryConf.maxAttempts &&
+                (await this.shouldRetry(retryConf, {
+                  attempt,
+                  maxAttempts: retryConf.maxAttempts,
+                  error,
+                  input,
+                  operation,
+                  defaultRetryable: true,
+                }));
+
+              if (canRetry) {
+                lastError = error;
+                await sleep(calculateBackoff(retryConf, attempt));
+                continue;
+              }
+
+              return { ok: false, error };
+            }
 
             if (timeoutId !== undefined) {
               clearTimeout(timeoutId);
@@ -828,7 +725,11 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
             }
 
             try {
-              const json = (await fetchResponse.json()) as
+              const rawText = await readBoundedText(
+                fetchResponse,
+                this.maxResponseBodyBytes,
+              );
+              const json = JSON.parse(rawText) as
                 | Response<any>
                 | {
                     ok: false;
@@ -868,11 +769,22 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
 
               return json;
             } catch (error) {
-              const decodeError = new VdlError({
-                message: "Failed to decode VDL response: " + String(error),
-                category: "ClientError",
-                code: "DECODE_RESPONSE",
-              });
+              const tooLarge =
+                String((error as Error)?.message ?? error).includes(
+                  "body too large",
+                ) ||
+                String(error).includes("body too large");
+              const decodeError = tooLarge
+                ? new VdlError({
+                    message: "Response body too large",
+                    category: "HTTPError",
+                    code: "BODY_TOO_LARGE",
+                  })
+                : new VdlError({
+                    message: "Failed to decode response: " + String(error),
+                    category: "ClientError",
+                    code: "DECODE_RESPONSE",
+                  });
               const canRetry =
                 attempt < retryConf.maxAttempts &&
                 (await this.shouldRetry(retryConf, {
@@ -954,379 +866,10 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
 
       return this.executeChain(reqInfo, invoker) as Promise<Response<any>>;
     }
-
-    /**
-     * Opens one stream subscription and returns an async event generator plus a cancel handle.
-     */
-    callStream(
-      rpcName: string,
-      streamName: string,
-      input: unknown,
-      opHeaderProviders: HeaderProvider[],
-      opReconnectConf?: ReconnectConfig,
-      opMaxMessageSize?: number,
-      onConnect?: () => void,
-      onDisconnect?: (error: Error | null) => void,
-      onReconnect?: (attempt: number, delayMs: number) => void,
-      opSignal?: AbortSignal,
-    ): {
-      stream: AsyncGenerator<Response<any>, void, unknown>;
-      cancel: () => void;
-    } {
-      const operation = this.getOperation(rpcName, streamName, "stream");
-      const reqInfo: RequestInfo = {
-        rpcName,
-        operationName: streamName,
-        input,
-        type: "stream",
-        operation,
-      };
-      const self = this;
-      let isCancelled = false;
-      let currentAbortController: AbortController | null = null;
-
-      const cancel = () => {
-        isCancelled = true;
-        currentAbortController?.abort();
-      };
-
-      const onExternalAbort = () => {
-        isCancelled = true;
-        currentAbortController?.abort();
-      };
-
-      if (opSignal?.aborted) {
-        isCancelled = true;
-      }
-
-      async function* generator(): AsyncGenerator<Response<any>, void, unknown> {
-        let finalError: VdlError | null = null;
-        if (opSignal && !opSignal.aborted) {
-          opSignal.addEventListener("abort", onExternalAbort);
-        }
-
-        try {
-          if (!operation) {
-            yield {
-              ok: false,
-              error: new VdlError({
-                message:
-                  rpcName + "." + streamName + " stream not found in schema",
-                category: "ClientError",
-                code: "INVALID_STREAM",
-                details: { rpc: rpcName, stream: streamName },
-              }),
-            };
-            return;
-          }
-
-          let payload: string;
-          try {
-            payload = input == null ? "{}" : JSON.stringify(input);
-          } catch (error) {
-            finalError = asError(error);
-            yield { ok: false, error: asError(finalError) };
-            return;
-          }
-
-          const reconnectConf = self.mergeReconnectConfig(
-            rpcName,
-            opReconnectConf,
-          );
-          const maxMessageSize = self.mergeMaxMessageSize(
-            rpcName,
-            opMaxMessageSize,
-          );
-          const url = self.baseURL + "/" + rpcName + "/" + streamName;
-          let reconnectAttempt = 0;
-
-          while (!isCancelled) {
-            currentAbortController = new AbortController();
-
-            try {
-              const headers: Record<string, string> = {
-                "content-type": "application/json",
-                accept: "text/event-stream",
-              };
-
-              await self.applyHeaders(rpcName, headers, opHeaderProviders);
-
-              const fetchResponse = await self.fetchFn(url, {
-                method: "POST",
-                headers,
-                body: payload,
-                signal: currentAbortController.signal,
-              });
-
-              if (fetchResponse.status >= 500) {
-                const error = new VdlError({
-                  message:
-                    "Unexpected HTTP status: " + String(fetchResponse.status),
-                  category: "HTTPError",
-                  code: "BAD_STATUS",
-                  details: { status: fetchResponse.status },
-                });
-                const delayMs = calculateReconnectBackoff(
-                  reconnectConf,
-                  reconnectAttempt + 1,
-                );
-                const canReconnect =
-                  reconnectAttempt < reconnectConf.maxAttempts &&
-                  (await self.shouldReconnect(reconnectConf, {
-                    attempt: reconnectAttempt + 1,
-                    maxAttempts: reconnectConf.maxAttempts,
-                    error,
-                    input,
-                    operation,
-                    delayMs,
-                    defaultReconnectable: true,
-                  }));
-
-                if (canReconnect) {
-                  onReconnect?.(reconnectAttempt + 1, delayMs);
-                  reconnectAttempt += 1;
-                  await sleep(delayMs);
-                  continue;
-                }
-
-                finalError = error;
-                yield { ok: false, error };
-                return;
-              }
-
-              if (!fetchResponse.ok) {
-                const error = new VdlError({
-                  message:
-                    "Unexpected HTTP status: " + String(fetchResponse.status),
-                  category: "HTTPError",
-                  code: "BAD_STATUS",
-                  details: { status: fetchResponse.status },
-                });
-                const delayMs = calculateReconnectBackoff(
-                  reconnectConf,
-                  reconnectAttempt + 1,
-                );
-                const canReconnect =
-                  reconnectAttempt < reconnectConf.maxAttempts &&
-                  (await self.shouldReconnect(reconnectConf, {
-                    attempt: reconnectAttempt + 1,
-                    maxAttempts: reconnectConf.maxAttempts,
-                    error,
-                    input,
-                    operation,
-                    delayMs,
-                    defaultReconnectable: false,
-                  }));
-
-                if (canReconnect) {
-                  onReconnect?.(reconnectAttempt + 1, delayMs);
-                  reconnectAttempt += 1;
-                  await sleep(delayMs);
-                  continue;
-                }
-
-                finalError = error;
-                yield { ok: false, error };
-                return;
-              }
-
-              if (!fetchResponse.body) {
-                const error = new VdlError({
-                  message: "Missing response body for stream",
-                  category: "ConnectionError",
-                  code: "STREAM_CONNECT_FAILED",
-                });
-                finalError = error;
-                yield { ok: false, error };
-                return;
-              }
-
-              onConnect?.();
-              reconnectAttempt = 0;
-
-              const reader = fetchResponse.body.getReader();
-              const decoder = new TextDecoder();
-              let buffer = "";
-
-              try {
-                while (!isCancelled) {
-                  const { done, value } = await reader.read();
-                  if (done) {
-                    break;
-                  }
-
-                  buffer += decoder.decode(value, { stream: true });
-
-                  let separatorIndex = buffer.indexOf("\\n\\n");
-                  while (separatorIndex >= 0) {
-                    const chunk = buffer.slice(0, separatorIndex).trim();
-                    buffer = buffer.slice(separatorIndex + 2);
-
-                    if (chunk === "" || chunk.startsWith(":")) {
-                      separatorIndex = buffer.indexOf("\\n\\n");
-                      continue;
-                    }
-
-                    if (chunk.startsWith("data:")) {
-                      const payloadText = chunk.slice(5).trim();
-                      if (payloadText.length > maxMessageSize) {
-                        finalError = new VdlError({
-                          message:
-                            "Stream message exceeded maximum size of " +
-                            String(maxMessageSize) +
-                            " bytes",
-                          category: "ProtocolError",
-                          code: "MESSAGE_TOO_LARGE",
-                        });
-                        yield { ok: false, error: asError(finalError) };
-                        return;
-                      }
-
-                      try {
-                        const event = JSON.parse(payloadText) as
-                          | Response<any>
-                          | {
-                              ok: false;
-                              error: {
-                                message?: string;
-                                category?: string;
-                                code?: string;
-                                details?: Record<string, unknown>;
-                              };
-                            };
-                        if (!event.ok) {
-                          yield {
-                            ok: false,
-                            error: new VdlError({
-                              message: event.error.message ?? "Unknown error",
-                              category: event.error.category,
-                              code: event.error.code,
-                              details: event.error.details,
-                            }),
-                          };
-                        } else {
-                          yield event;
-                        }
-                      } catch (error) {
-                        finalError = new VdlError({
-                          message:
-                            "Received invalid SSE payload: " + String(error),
-                          category: "ProtocolError",
-                          code: "INVALID_PAYLOAD",
-                        });
-                        yield { ok: false, error: asError(finalError) };
-                        return;
-                      }
-                    }
-
-                    if (buffer.length > maxMessageSize) {
-                      finalError = new VdlError({
-                        message:
-                          "Stream message accumulation exceeded maximum size of " +
-                          String(maxMessageSize) +
-                          " bytes",
-                        category: "ProtocolError",
-                        code: "MESSAGE_TOO_LARGE",
-                      });
-                      yield { ok: false, error: asError(finalError) };
-                      return;
-                    }
-
-                    separatorIndex = buffer.indexOf("\\n\\n");
-                  }
-                }
-
-                return;
-              } catch (error) {
-                const normalizedError = asError(error);
-                const delayMs = calculateReconnectBackoff(
-                  reconnectConf,
-                  reconnectAttempt + 1,
-                );
-                const canReconnect =
-                  !isCancelled &&
-                  reconnectAttempt < reconnectConf.maxAttempts &&
-                  (await self.shouldReconnect(reconnectConf, {
-                    attempt: reconnectAttempt + 1,
-                    maxAttempts: reconnectConf.maxAttempts,
-                    error: normalizedError,
-                    input,
-                    operation,
-                    delayMs,
-                    defaultReconnectable: true,
-                  }));
-
-                if (canReconnect) {
-                  onReconnect?.(reconnectAttempt + 1, delayMs);
-                  reconnectAttempt += 1;
-                  await sleep(delayMs);
-                  continue;
-                }
-
-                finalError = normalizedError;
-                yield { ok: false, error: normalizedError };
-                return;
-              }
-            } catch (error) {
-              const normalizedError = asError(error);
-              const delayMs = calculateReconnectBackoff(
-                reconnectConf,
-                reconnectAttempt + 1,
-              );
-              const canReconnect =
-                !isCancelled &&
-                reconnectAttempt < reconnectConf.maxAttempts &&
-                (await self.shouldReconnect(reconnectConf, {
-                  attempt: reconnectAttempt + 1,
-                  maxAttempts: reconnectConf.maxAttempts,
-                  error: normalizedError,
-                  input,
-                  operation,
-                  delayMs,
-                  defaultReconnectable: true,
-                }));
-
-              if (canReconnect) {
-                onReconnect?.(reconnectAttempt + 1, delayMs);
-                reconnectAttempt += 1;
-                await sleep(delayMs);
-                continue;
-              }
-
-              finalError = normalizedError;
-              if (!isCancelled) {
-                yield { ok: false, error: normalizedError };
-              }
-              return;
-            }
-          }
-        } finally {
-          opSignal?.removeEventListener("abort", onExternalAbort);
-          onDisconnect?.(finalError);
-        }
-      }
-
-      const wrappedGenerator = async function* () {
-        const result = await self.executeChain(reqInfo, async () => ({
-          ok: true,
-          output: null,
-        }));
-        if (!result.ok) {
-          yield result;
-          return;
-        }
-        yield* generator();
-      };
-
-      return {
-        stream: wrappedGenerator(),
-        cancel,
-      };
-    }
   }
 
   /**
-   * Internal mutator applied while building an internalClient instance.
+   * Internal client option applied during client construction.
    */
   type internalClientOption = (client: internalClient) => void;
 
@@ -1363,16 +906,9 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
     return (client) => client.setGlobalTimeoutConfig(conf);
   }
 
-  /** Creates an option that sets the global reconnect policy. */
-  function withGlobalReconnectConfig(
-    conf: ReconnectConfig,
-  ): internalClientOption {
-    return (client) => client.setGlobalReconnectConfig(conf);
-  }
-
-  /** Creates an option that sets the global maximum stream message size. */
-  function withGlobalMaxMessageSize(size: number): internalClientOption {
-    return (client) => client.setGlobalMaxMessageSize(size);
+  /** Creates an option that caps response body bytes accepted per call. */
+  function withMaxResponseBodyBytes(n: number): internalClientOption {
+    return (client) => client.setMaxResponseBodyBytes(n);
   }
 
   /**
@@ -1380,19 +916,13 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
    */
   class clientBuilder {
     private readonly baseURL: string;
-    private readonly procDefs: OperationDefinition[];
-    private readonly streamDefs: OperationDefinition[];
+    private readonly procDefs: ProcDefinition[];
     private readonly opts: internalClientOption[] = [];
 
-    /** Creates a new builder bound to the generated operation catalogs. */
-    constructor(
-      baseURL: string,
-      procDefs: OperationDefinition[],
-      streamDefs: OperationDefinition[],
-    ) {
+    /** Creates a new builder bound to the generated operation catalog. */
+    constructor(baseURL: string, procDefs: ProcDefinition[]) {
       this.baseURL = baseURL;
       this.procDefs = procDefs;
-      this.streamDefs = streamDefs;
     }
 
     /** Overrides the fetch implementation used by the internal client. */
@@ -1431,26 +961,15 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
       return this;
     }
 
-    /** Sets the global reconnect policy default. */
-    withGlobalReconnectConfig(conf: ReconnectConfig): clientBuilder {
-      this.opts.push(withGlobalReconnectConfig(conf));
-      return this;
-    }
-
-    /** Sets the global maximum stream message size default. */
-    withGlobalMaxMessageSize(size: number): clientBuilder {
-      this.opts.push(withGlobalMaxMessageSize(size));
+    /** Caps response body bytes accepted per call. Values <= 0 restore the default. */
+    withMaxResponseBodyBytes(n: number): clientBuilder {
+      this.opts.push(withMaxResponseBodyBytes(n));
       return this;
     }
 
     /** Builds the final internal client instance. */
     build(): internalClient {
-      return new internalClient(
-        this.baseURL,
-        this.procDefs,
-        this.streamDefs,
-        this.opts,
-      );
+      return new internalClient(this.baseURL, this.procDefs, this.opts);
     }
   }
 `);

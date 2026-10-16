@@ -4,7 +4,7 @@ import { writeDocComment } from "../../../../shared/comments";
 import { renderTypeScriptFile } from "../../../../shared/render-ts-file";
 import type {
   GeneratorContext,
-  OperationDescriptor,
+  ProcDescriptor,
   ServiceDescriptor,
 } from "../../../model/types";
 import { renderCatalogSource } from "../shared/catalog";
@@ -39,14 +39,14 @@ export function generateClientFile(
 }
 
 /**
- * Emits the generated public client API and typed operation builders.
+ * Emits the generated public client API and typed proc builders.
  */
 function renderClientFacade(
   g: ReturnType<typeof newGenerator>,
   context: GeneratorContext,
 ): void {
   writeDocComment(g, {
-    fallback: "Creates a new VDL RPC client builder.",
+    fallback: "Creates a new VDL HTTP RPC client builder.",
   });
   g.line("export function NewClient(baseURL: string): ClientBuilder {");
   g.block(() => {
@@ -65,9 +65,7 @@ function renderClientFacade(
 
     g.line("constructor(baseURL: string) {");
     g.block(() => {
-      g.line(
-        "this.builder = new clientBuilder(baseURL, VDLProcedures, VDLStreams);",
-      );
+      g.line("this.builder = new clientBuilder(baseURL, VDLProcs);");
     });
     g.line("}");
     g.break();
@@ -139,25 +137,13 @@ function renderClientFacade(
     });
     g.line("}");
     g.break();
-
     writeDocComment(g, {
       fallback:
-        "Sets the global default reconnect policy for generated streams.",
+        "Caps response body bytes accepted per call. Values <= 0 restore the 4 MiB default.",
     });
-    g.line("withGlobalReconnectConfig(conf: ReconnectConfig): ClientBuilder {");
+    g.line("withMaxResponseBodyBytes(n: number): ClientBuilder {");
     g.block(() => {
-      g.line("this.builder.withGlobalReconnectConfig(conf);");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback: "Sets the global maximum stream message size.",
-    });
-    g.line("withGlobalMaxMessageSize(size: number): ClientBuilder {");
-    g.block(() => {
-      g.line("this.builder.withGlobalMaxMessageSize(size);");
+      g.line("this.builder.withMaxResponseBodyBytes(n);");
       g.line("return this;");
     });
     g.line("}");
@@ -177,14 +163,13 @@ function renderClientFacade(
 
   writeDocComment(g, {
     fallback:
-      "Main VDL RPC client exposing typed access to generated procedures and streams.",
+      "Main VDL HTTP RPC client exposing typed access to generated procedures.",
   });
   g.line("export class Client {");
   g.block(() => {
     g.line("private readonly intClient: internalClient;");
     g.line("public readonly rpcs: ClientRPCRegistry;");
     g.line("public readonly procs: ProcRegistry;");
-    g.line("public readonly streams: StreamRegistry;");
     g.break();
 
     g.line("constructor(intClient: internalClient) {");
@@ -192,7 +177,6 @@ function renderClientFacade(
       g.line("this.intClient = intClient;");
       g.line("this.rpcs = new ClientRPCRegistry(intClient);");
       g.line("this.procs = new ProcRegistry(intClient);");
-      g.line("this.streams = new StreamRegistry(intClient);");
     });
     g.line("}");
   });
@@ -201,7 +185,6 @@ function renderClientFacade(
 
   renderRPCRegistry(g, context);
   renderProcedureRegistry(g, context);
-  renderStreamRegistry(g, context);
 }
 
 /**
@@ -212,7 +195,7 @@ function renderRPCRegistry(
   context: GeneratorContext,
 ): void {
   writeDocComment(g, {
-    fallback: "Registry exposing every generated RPC service.",
+    fallback: "Registry exposing every generated HTTP RPC service.",
   });
   g.line("class ClientRPCRegistry {");
   g.block(() => {
@@ -242,7 +225,6 @@ function renderRPCRegistry(
   for (const service of context.services) {
     renderRPCClientClass(g, service);
     renderRPCProcedureRegistry(g, service);
-    renderRPCStreamRegistry(g, service);
   }
 }
 
@@ -262,14 +244,12 @@ function renderRPCClientClass(
   g.block(() => {
     g.line("private readonly intClient: internalClient;");
     g.line(`public readonly procs: Client${service.name}Procs;`);
-    g.line(`public readonly streams: Client${service.name}Streams;`);
     g.break();
 
     g.line("constructor(intClient: internalClient) {");
     g.block(() => {
       g.line("this.intClient = intClient;");
       g.line(`this.procs = new Client${service.name}Procs(intClient);`);
-      g.line(`this.streams = new Client${service.name}Streams(intClient);`);
     });
     g.line("}");
     g.break();
@@ -299,6 +279,19 @@ function renderRPCClientClass(
       g.line(
         `this.intClient.setRPCHeaderProvider(${JSON.stringify(service.name)}, provider);`,
       );
+      g.line("return this;");
+    });
+    g.line("}");
+    g.break();
+
+    writeDocComment(g, {
+      fallback: `Adds an interceptor for every ${service.name} request.`,
+    });
+    g.line(
+      `withInterceptor(interceptor: Interceptor): Client${service.name}RPC {`,
+    );
+    g.block(() => {
+      g.line("this.intClient.addInterceptor(interceptor);");
       g.line("return this;");
     });
     g.line("}");
@@ -362,47 +355,17 @@ function renderRPCClientClass(
     g.line("}");
     g.break();
 
-    writeDocComment(g, {
-      fallback: `Sets the default reconnect policy for streams in ${service.name}.`,
-    });
-    g.line(
-      `withReconnect(config: Partial<ReconnectConfig>): Client${service.name}RPC {`,
-    );
-    g.block(() => {
+    for (const procedure of service.procs) {
+      writeDocComment(g, {
+        doc: procedure.doc,
+        annotations: procedure.annotations,
+        fallback: `Creates a call builder for ${service.name}.${procedure.name}.`,
+      });
       g.line(
-        `this.intClient.setRPCReconnectConfig(${JSON.stringify(service.name)}, normalizeReconnectConfig(config, 5));`,
+        `${procedure.serverMethodName}(): Proc${procedure.rpcName}${procedure.name}Builder { return new Proc${procedure.rpcName}${procedure.name}Builder(this.intClient, ${JSON.stringify(procedure.rpcName)}, ${JSON.stringify(procedure.name)}); }`,
       );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback: `Sets the exact reconnect configuration for streams in ${service.name}.`,
-    });
-    g.line(
-      `withReconnectConfig(config: ReconnectConfig): Client${service.name}RPC {`,
-    );
-    g.block(() => {
-      g.line(
-        `this.intClient.setRPCReconnectConfig(${JSON.stringify(service.name)}, normalizeReconnectConfig(config, config.maxAttempts));`,
-      );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback: `Sets the default maximum stream message size for ${service.name}.`,
-    });
-    g.line(`withMaxMessageSize(size: number): Client${service.name}RPC {`);
-    g.block(() => {
-      g.line(
-        `this.intClient.setRPCMaxMessageSize(${JSON.stringify(service.name)}, size);`,
-      );
-      g.line("return this;");
-    });
-    g.line("}");
+      g.break();
+    }
   });
   g.line("}");
   g.break();
@@ -428,7 +391,7 @@ function renderRPCProcedureRegistry(
     g.line("}");
     g.break();
 
-    for (const procedure of service.procedures) {
+    for (const procedure of service.procs) {
       writeDocComment(g, {
         doc: procedure.doc,
         annotations: procedure.annotations,
@@ -436,42 +399,6 @@ function renderRPCProcedureRegistry(
       });
       g.line(
         `${procedure.serverMethodName}(): Proc${procedure.rpcName}${procedure.name}Builder { return new Proc${procedure.rpcName}${procedure.name}Builder(this.intClient, ${JSON.stringify(procedure.rpcName)}, ${JSON.stringify(procedure.name)}); }`,
-      );
-      g.break();
-    }
-  });
-  g.line("}");
-  g.break();
-}
-
-/**
- * Emits the stream registry for one RPC service.
- */
-function renderRPCStreamRegistry(
-  g: ReturnType<typeof newGenerator>,
-  service: ServiceDescriptor,
-): void {
-  writeDocComment(g, {
-    fallback: `Registry exposing every generated stream builder for ${service.name}.`,
-  });
-  g.line(`class Client${service.name}Streams {`);
-  g.block(() => {
-    g.line("private readonly intClient: internalClient;");
-    g.line("constructor(intClient: internalClient) {");
-    g.block(() => {
-      g.line("this.intClient = intClient;");
-    });
-    g.line("}");
-    g.break();
-
-    for (const stream of service.streams) {
-      writeDocComment(g, {
-        doc: stream.doc,
-        annotations: stream.annotations,
-        fallback: `Creates a stream builder for ${service.name}.${stream.name}.`,
-      });
-      g.line(
-        `${stream.serverMethodName}(): Stream${stream.rpcName}${stream.name}Builder { return new Stream${stream.rpcName}${stream.name}Builder(this.intClient, ${JSON.stringify(stream.rpcName)}, ${JSON.stringify(stream.name)}); }`,
       );
       g.break();
     }
@@ -500,7 +427,7 @@ function renderProcedureRegistry(
     g.line("}");
     g.break();
 
-    for (const procedure of context.procedures) {
+    for (const procedure of context.procs) {
       writeDocComment(g, {
         doc: procedure.doc,
         annotations: procedure.annotations,
@@ -515,48 +442,8 @@ function renderProcedureRegistry(
   g.line("}");
   g.break();
 
-  for (const procedure of context.procedures) {
+  for (const procedure of context.procs) {
     renderProcedureBuilder(g, procedure);
-  }
-}
-
-/**
- * Emits the flattened stream registry.
- */
-function renderStreamRegistry(
-  g: ReturnType<typeof newGenerator>,
-  context: GeneratorContext,
-): void {
-  writeDocComment(g, {
-    fallback: "Registry exposing every generated stream builder.",
-  });
-  g.line("class StreamRegistry {");
-  g.block(() => {
-    g.line("private readonly intClient: internalClient;");
-    g.line("constructor(intClient: internalClient) {");
-    g.block(() => {
-      g.line("this.intClient = intClient;");
-    });
-    g.line("}");
-    g.break();
-
-    for (const stream of context.streams) {
-      writeDocComment(g, {
-        doc: stream.doc,
-        annotations: stream.annotations,
-        fallback: `Creates a stream builder for ${stream.rpcName}.${stream.name}.`,
-      });
-      g.line(
-        `${stream.clientMethodName}(): Stream${stream.rpcName}${stream.name}Builder { return new Stream${stream.rpcName}${stream.name}Builder(this.intClient, ${JSON.stringify(stream.rpcName)}, ${JSON.stringify(stream.name)}); }`,
-      );
-      g.break();
-    }
-  });
-  g.line("}");
-  g.break();
-
-  for (const stream of context.streams) {
-    renderStreamBuilder(g, stream);
   }
 }
 
@@ -579,17 +466,17 @@ function renderRuntimeHelperReference(typeName?: string): string {
  */
 function renderProcedureBuilder(
   g: ReturnType<typeof newGenerator>,
-  operation: OperationDescriptor,
+  proc: ProcDescriptor,
 ): void {
-  const inputType = renderRuntimeTypeReference(operation.inputTypeName);
-  const outputType = renderRuntimeTypeReference(operation.outputTypeName);
-  const inputHelper = renderRuntimeHelperReference(operation.inputTypeName);
-  const outputHelper = renderRuntimeHelperReference(operation.outputTypeName);
-  const executeSignature = operation.inputTypeName
+  const inputType = renderRuntimeTypeReference(proc.inputTypeName);
+  const outputType = renderRuntimeTypeReference(proc.outputTypeName);
+  const inputHelper = renderRuntimeHelperReference(proc.inputTypeName);
+  const outputHelper = renderRuntimeHelperReference(proc.outputTypeName);
+  const executeSignature = proc.inputTypeName
     ? `async execute(input: ${inputType}): Promise<${outputType}>`
     : `async execute(input: Void = {}): Promise<${outputType}>`;
 
-  g.line(`class Proc${operation.rpcName}${operation.name}Builder {`);
+  g.line(`class Proc${proc.rpcName}${proc.name}Builder {`);
   g.block(() => {
     g.line("private readonly intClient: internalClient;");
     g.line("private readonly rpcName: string;");
@@ -615,7 +502,7 @@ function renderProcedureBuilder(
       fallback: "Adds a static header to this procedure call.",
     });
     g.line(
-      `withHeader(key: string, value: string): Proc${operation.rpcName}${operation.name}Builder {`,
+      `withHeader(key: string, value: string): Proc${proc.rpcName}${proc.name}Builder {`,
     );
     g.block(() => {
       g.line(
@@ -631,7 +518,7 @@ function renderProcedureBuilder(
         "Adds a dynamic header provider to this procedure call. The provider runs on every attempt, including retries.",
     });
     g.line(
-      `withHeaderProvider(provider: HeaderProvider): Proc${operation.rpcName}${operation.name}Builder {`,
+      `withHeaderProvider(provider: HeaderProvider): Proc${proc.rpcName}${proc.name}Builder {`,
     );
     g.block(() => {
       g.line("this.headerProviders.push(provider);");
@@ -642,10 +529,10 @@ function renderProcedureBuilder(
 
     writeDocComment(g, {
       fallback:
-        "Configures retry behavior for this procedure call. The optional shouldRetry callback receives the resolved operation metadata, including annotations.",
+        "Configures retry behavior for this procedure call. The optional shouldRetry callback receives the resolved proc metadata, including annotations.",
     });
     g.line(
-      `withRetries(config: Partial<RetryConfig>): Proc${operation.rpcName}${operation.name}Builder {`,
+      `withRetries(config: Partial<RetryConfig>): Proc${proc.rpcName}${proc.name}Builder {`,
     );
     g.block(() => {
       g.line("this.retryConfig = normalizeRetryConfig(config, 3);");
@@ -659,7 +546,7 @@ function renderProcedureBuilder(
         "Sets the exact retry configuration for this procedure call, including max attempts.",
     });
     g.line(
-      `withRetryConfig(config: RetryConfig): Proc${operation.rpcName}${operation.name}Builder {`,
+      `withRetryConfig(config: RetryConfig): Proc${proc.rpcName}${proc.name}Builder {`,
     );
     g.block(() => {
       g.line(
@@ -674,7 +561,7 @@ function renderProcedureBuilder(
       fallback: "Configures timeout behavior for this procedure call.",
     });
     g.line(
-      `withTimeout(config: Partial<TimeoutConfig>): Proc${operation.rpcName}${operation.name}Builder {`,
+      `withTimeout(config: Partial<TimeoutConfig>): Proc${proc.rpcName}${proc.name}Builder {`,
     );
     g.block(() => {
       g.line("this.timeoutConfig = normalizeTimeoutConfig(config);");
@@ -687,7 +574,7 @@ function renderProcedureBuilder(
       fallback: "Sets the exact timeout configuration for this procedure call.",
     });
     g.line(
-      `withTimeoutConfig(config: TimeoutConfig): Proc${operation.rpcName}${operation.name}Builder {`,
+      `withTimeoutConfig(config: TimeoutConfig): Proc${proc.rpcName}${proc.name}Builder {`,
     );
     g.block(() => {
       g.line("this.timeoutConfig = normalizeTimeoutConfig(config);");
@@ -701,7 +588,7 @@ function renderProcedureBuilder(
         "Sets an external AbortSignal used to cancel this procedure call.",
     });
     g.line(
-      `withSignal(signal: AbortSignal): Proc${operation.rpcName}${operation.name}Builder {`,
+      `withSignal(signal: AbortSignal): Proc${proc.rpcName}${proc.name}Builder {`,
     );
     g.block(() => {
       g.line("this.signal = signal;");
@@ -711,9 +598,9 @@ function renderProcedureBuilder(
     g.break();
 
     writeDocComment(g, {
-      doc: operation.doc,
-      annotations: operation.annotations,
-      fallback: `Executes ${operation.rpcName}.${operation.name}.`,
+      doc: proc.doc,
+      annotations: proc.annotations,
+      fallback: `Executes ${proc.rpcName}.${proc.name}.`,
     });
     g.line(`${executeSignature} {`);
     g.block(() => {
@@ -736,255 +623,6 @@ function renderProcedureBuilder(
       g.line(
         `return ${outputHelper}.hydrate(rawResponse.output as ${outputType});`,
       );
-    });
-    g.line("}");
-  });
-  g.line("}");
-  g.break();
-}
-
-/**
- * Emits one typed stream builder.
- */
-function renderStreamBuilder(
-  g: ReturnType<typeof newGenerator>,
-  operation: OperationDescriptor,
-): void {
-  const inputType = renderRuntimeTypeReference(operation.inputTypeName);
-  const outputType = renderRuntimeTypeReference(operation.outputTypeName);
-  const inputHelper = renderRuntimeHelperReference(operation.inputTypeName);
-  const outputHelper = renderRuntimeHelperReference(operation.outputTypeName);
-  const responseType = operation.streamResponseTypeName;
-  const executeSignature = operation.inputTypeName
-    ? `execute(input: ${inputType})`
-    : `execute(input: Void = {})`;
-
-  writeDocComment(g, {
-    doc: operation.doc,
-    annotations: operation.annotations,
-    fallback: `Typed stream event envelope yielded by ${operation.rpcName}.${operation.name}.`,
-  });
-  g.line(`export type ${responseType} = Response<${outputType}>;`);
-  g.break();
-
-  g.line(`class Stream${operation.rpcName}${operation.name}Builder {`);
-  g.block(() => {
-    g.line("private readonly intClient: internalClient;");
-    g.line("private readonly rpcName: string;");
-    g.line("private readonly streamName: string;");
-    g.line("private readonly headerProviders: HeaderProvider[] = [];");
-    g.line("private reconnectConfig?: ReconnectConfig;");
-    g.line("private maxMessageSize = 0;");
-    g.line("private onConnectCb?: () => void;");
-    g.line("private onDisconnectCb?: (error: Error | null) => void;");
-    g.line(
-      "private onReconnectCb?: (attempt: number, delayMs: number) => void;",
-    );
-    g.line("private signal?: AbortSignal;");
-    g.break();
-
-    g.line(
-      "constructor(intClient: internalClient, rpcName: string, streamName: string) {",
-    );
-    g.block(() => {
-      g.line("this.intClient = intClient;");
-      g.line("this.rpcName = rpcName;");
-      g.line("this.streamName = streamName;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback: "Adds a static header to this stream subscription.",
-    });
-    g.line(
-      `withHeader(key: string, value: string): Stream${operation.rpcName}${operation.name}Builder {`,
-    );
-    g.block(() => {
-      g.line(
-        "this.headerProviders.push((headers) => { headers[key] = value; });",
-      );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback:
-        "Adds a dynamic header provider to this stream subscription. The provider runs again for every reconnect attempt.",
-    });
-    g.line(
-      `withHeaderProvider(provider: HeaderProvider): Stream${operation.rpcName}${operation.name}Builder {`,
-    );
-    g.block(() => {
-      g.line("this.headerProviders.push(provider);");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback:
-        "Configures reconnect behavior for this stream. The optional shouldReconnect callback receives the resolved operation metadata, including annotations.",
-    });
-    g.line(
-      `withReconnect(config: Partial<ReconnectConfig>): Stream${operation.rpcName}${operation.name}Builder {`,
-    );
-    g.block(() => {
-      g.line("this.reconnectConfig = normalizeReconnectConfig(config, 5);");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback:
-        "Sets the exact reconnect configuration for this stream, including max attempts.",
-    });
-    g.line(
-      `withReconnectConfig(config: ReconnectConfig): Stream${operation.rpcName}${operation.name}Builder {`,
-    );
-    g.block(() => {
-      g.line(
-        "this.reconnectConfig = normalizeReconnectConfig(config, config.maxAttempts);",
-      );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback: "Sets the maximum allowed stream message size in bytes.",
-    });
-    g.line(
-      `withMaxMessageSize(size: number): Stream${operation.rpcName}${operation.name}Builder {`,
-    );
-    g.block(() => {
-      g.line("this.maxMessageSize = size;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback: "Registers a callback invoked after the stream connects.",
-    });
-    g.line(
-      `onConnect(cb: () => void): Stream${operation.rpcName}${operation.name}Builder {`,
-    );
-    g.block(() => {
-      g.line("this.onConnectCb = cb;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback: "Alias of onConnect for compatibility with previous APIs.",
-    });
-    g.line(
-      `withOnConnect(cb: () => void): Stream${operation.rpcName}${operation.name}Builder { return this.onConnect(cb); }`,
-    );
-    g.break();
-
-    writeDocComment(g, {
-      fallback:
-        "Registers a callback invoked when the stream permanently disconnects.",
-    });
-    g.line(
-      `onDisconnect(cb: (error: Error | null) => void): Stream${operation.rpcName}${operation.name}Builder {`,
-    );
-    g.block(() => {
-      g.line("this.onDisconnectCb = cb;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback: "Alias of onDisconnect for compatibility with previous APIs.",
-    });
-    g.line(
-      `withOnDisconnect(cb: (error: Error | null) => void): Stream${operation.rpcName}${operation.name}Builder { return this.onDisconnect(cb); }`,
-    );
-    g.break();
-
-    writeDocComment(g, {
-      fallback: "Registers a callback invoked before each reconnect attempt.",
-    });
-    g.line(
-      `onReconnect(cb: (attempt: number, delayMs: number) => void): Stream${operation.rpcName}${operation.name}Builder {`,
-    );
-    g.block(() => {
-      g.line("this.onReconnectCb = cb;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      fallback: "Alias of onReconnect for compatibility with previous APIs.",
-    });
-    g.line(
-      `withOnReconnect(cb: (attempt: number, delayMs: number) => void): Stream${operation.rpcName}${operation.name}Builder { return this.onReconnect(cb); }`,
-    );
-    g.break();
-
-    writeDocComment(g, {
-      fallback: "Sets an external AbortSignal used to cancel this stream.",
-    });
-    g.line(
-      `withSignal(signal: AbortSignal): Stream${operation.rpcName}${operation.name}Builder {`,
-    );
-    g.block(() => {
-      g.line("this.signal = signal;");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-
-    writeDocComment(g, {
-      doc: operation.doc,
-      annotations: operation.annotations,
-      fallback: `Opens ${operation.rpcName}.${operation.name}.`,
-    });
-    g.line(
-      `${executeSignature}: { stream: AsyncGenerator<${responseType}, void, unknown>; cancel: () => void } {`,
-    );
-    g.block(() => {
-      g.line(`const validationError = ${inputHelper}.validate(input);`);
-      g.line("if (validationError !== null) {");
-      g.block(() => {
-        g.line(
-          'throw new VdlError({ message: validationError, code: "INVALID_INPUT", category: "ValidationError" });',
-        );
-      });
-      g.line("}");
-      g.line(
-        "const { stream, cancel } = this.intClient.callStream(this.rpcName, this.streamName, input, this.headerProviders, this.reconnectConfig, this.maxMessageSize, this.onConnectCb, this.onDisconnectCb, this.onReconnectCb, this.signal);",
-      );
-      g.line(
-        `const typedStream = async function* (): AsyncGenerator<${responseType}, void, unknown> {`,
-      );
-      g.block(() => {
-        g.line("for await (const event of stream) {");
-        g.block(() => {
-          g.line("if (!event.ok) {");
-          g.block(() => {
-            g.line(
-              `yield { ok: false, error: event.error } as ${responseType};`,
-            );
-          });
-          g.line("continue;");
-          g.line("}");
-          g.line(
-            `yield { ok: true, output: ${outputHelper}.hydrate(event.output as ${outputType}) } as ${responseType};`,
-          );
-        });
-        g.line("}");
-      });
-      g.line("};");
-      g.line("return { stream: typedStream(), cancel }; ");
     });
     g.line("}");
   });
