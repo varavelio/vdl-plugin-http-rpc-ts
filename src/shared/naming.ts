@@ -21,10 +21,11 @@ export function toClientOperationMethodName(
 }
 
 /**
- * Returns the client-side response type alias name for a stream operation.
+ * Applies the VPP-2 route rule to an RPC service name.
  */
-export function toStreamResponseTypeName(operationTypeName: string): string {
-  return `${operationTypeName}Response`;
+export function toLowerFirst(value: string): string {
+  if (value.length === 0) return value;
+  return value.charAt(0).toLowerCase() + value.slice(1);
 }
 
 /**
