@@ -2,6 +2,7 @@
 
 import { createServer } from "node:http";
 import { createNodeHandler } from "./gen/adapters/node.ts";
+import type { FetchLike } from "./gen/client.ts";
 import { VdlError as ClientVdlError, NewClient } from "./gen/client.ts";
 import { Server, VdlError as ServerVdlError } from "./gen/server.ts";
 
@@ -140,6 +141,30 @@ async function main() {
     process.exit(1);
   }
   console.log("Test 5 PASSED");
+
+  // Test 6: corrupt proc output surfaces as typed VdlError, never raw.
+  const stubFetch: FetchLike = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, output: { wrong: 1 } }),
+    text: async () => JSON.stringify({ ok: true, output: { wrong: 1 } }),
+  });
+  const stubClient = NewClient(baseUrl).withCustomFetch(stubFetch).build();
+  try {
+    await stubClient.rpcs.shop().procs.getProduct().execute({ id: "p1" });
+    console.error("Test 6 FAILED: expected INVALID_OUTPUT, got success");
+    process.exit(1);
+  } catch (error) {
+    if (!(error instanceof ClientVdlError)) {
+      console.error("Test 6 FAILED: expected VdlError, got:", error);
+      process.exit(1);
+    }
+    if (error.code !== "INVALID_OUTPUT") {
+      console.error("Test 6 FAILED: expected INVALID_OUTPUT, got:", error.code);
+      process.exit(1);
+    }
+  }
+  console.log("Test 6 PASSED");
 
   console.log("Success");
   httpServer.close();

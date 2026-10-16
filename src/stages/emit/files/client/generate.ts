@@ -588,8 +588,22 @@ function renderProcedureBuilder(
         g.line("throw rawResponse.error;");
       });
       g.line("}");
+
+      // Omitted outputs arrive without an output member per VPP-2.
+      const outputValue = proc.outputTypeName
+        ? "rawResponse.output"
+        : "(rawResponse.output ?? {})";
+      g.line(`const outputError = ${outputHelper}.validate(${outputValue});`);
+      g.line("if (outputError !== null) {");
+      g.block(() => {
+        g.line(
+          'throw new VdlError({ message: outputError, code: "INVALID_OUTPUT", category: "ValidationError" });',
+        );
+      });
+      g.line("}");
+
       g.line(
-        `return ${outputHelper}.hydrate(rawResponse.output as ${outputType});`,
+        `return ${outputHelper}.hydrate(${outputValue} as ${outputType});`,
       );
     });
     g.line("}");
