@@ -219,7 +219,7 @@ export default {
 
 ## Adapter Behavior
 
-- Mount adapters under the RPC base path; segments below the mount point must be `/{rpc}/{procedure}` using the VPP-2 `lowerFirst` transport form.
+- Mount adapters under the RPC base path; segments below the mount point must be `/{rpc}/{proc}` using the VPP-2 `lowerFirst` transport form.
 - Only `POST` requests route to procedures (anything else gets `405` with an `Allow: POST` header). Paths without exactly two segments get `404`.
 - Unknown procedures keep the standard `ok:false` envelope behavior.
 - See [SECURITY.md](SECURITY.md) for request/response size limits and error privacy guarantees.

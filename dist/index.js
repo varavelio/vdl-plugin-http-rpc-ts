@@ -988,7 +988,7 @@ var CLIENT_RUNTIME = dedent2(
   /**
    * A function that adds or modifies headers before each request.
    *
-   * Header providers are executed in this order: global, RPC-level, procedure-level.
+   * Header providers are executed in this order: global, RPC-level, proc-level.
    * They run before every request attempt, including retries.
    */
   export type HeaderProvider = (
@@ -1345,7 +1345,7 @@ var CLIENT_RUNTIME = dedent2(
     }
 
     /**
-     * Resolves one procedure definition.
+     * Resolves one proc definition.
      */
     private getProc(
       rpcName: string,
@@ -1360,7 +1360,7 @@ var CLIENT_RUNTIME = dedent2(
 
     /**
      * Resolves the effective retry configuration for a request.
-     * Priority: procedure-level > RPC-level > global > built-in defaults.
+     * Priority: proc-level > RPC-level > global > built-in defaults.
      */
     private mergeRetryConfig(
       rpcName: string,
@@ -1383,7 +1383,7 @@ var CLIENT_RUNTIME = dedent2(
 
     /**
      * Resolves the effective timeout configuration for a request.
-     * Priority: procedure-level > RPC-level > global > built-in defaults.
+     * Priority: proc-level > RPC-level > global > built-in defaults.
      */
     private mergeTimeoutConfig(
       rpcName: string,
@@ -2013,6 +2013,30 @@ function renderClientFacade(g, context) {
     g.line("}");
     g.break();
     writeDocComment(g, {
+      fallback: "Sets the global retry policy for generated procedures."
+    });
+    g.line("withRetries(config: Partial<RetryConfig>): ClientBuilder {");
+    g.block(() => {
+      g.line(
+        "this.builder.withGlobalRetryConfig(normalizeRetryConfig(config, 3));"
+      );
+      g.line("return this;");
+    });
+    g.line("}");
+    g.break();
+    writeDocComment(g, {
+      fallback: "Sets the global timeout policy for generated procedures."
+    });
+    g.line("withTimeout(config: Partial<TimeoutConfig>): ClientBuilder {");
+    g.block(() => {
+      g.line(
+        "this.builder.withGlobalTimeoutConfig(normalizeTimeoutConfig(config));"
+      );
+      g.line("return this;");
+    });
+    g.line("}");
+    g.break();
+    writeDocComment(g, {
       fallback: "Caps response body bytes accepted per call. Values <= 0 restore the 4 MiB default."
     });
     g.line("withMaxResponseBodyBytes(n: number): ClientBuilder {");
@@ -2148,7 +2172,7 @@ function renderRPCClientClass(g, service) {
     g.line("}");
     g.break();
     writeDocComment(g, {
-      fallback: `Sets the default retry policy for procedures in ${service.name}.`
+      fallback: `Sets the retry policy for procedures in ${service.name}.`
     });
     g.line(
       `withRetries(config: Partial<RetryConfig>): Client${service.name}RPC {`
@@ -2162,36 +2186,10 @@ function renderRPCClientClass(g, service) {
     g.line("}");
     g.break();
     writeDocComment(g, {
-      fallback: `Sets the exact retry configuration for procedures in ${service.name}.`
-    });
-    g.line(`withRetryConfig(config: RetryConfig): Client${service.name}RPC {`);
-    g.block(() => {
-      g.line(
-        `this.intClient.setRPCRetryConfig(${JSON.stringify(service.name)}, normalizeRetryConfig(config, config.maxAttempts));`
-      );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: `Sets the default timeout policy for procedures in ${service.name}.`
+      fallback: `Sets the timeout policy for procedures in ${service.name}.`
     });
     g.line(
       `withTimeout(config: Partial<TimeoutConfig>): Client${service.name}RPC {`
-    );
-    g.block(() => {
-      g.line(
-        `this.intClient.setRPCTimeoutConfig(${JSON.stringify(service.name)}, normalizeTimeoutConfig(config));`
-      );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: `Sets the exact timeout configuration for procedures in ${service.name}.`
-    });
-    g.line(
-      `withTimeoutConfig(config: TimeoutConfig): Client${service.name}RPC {`
     );
     g.block(() => {
       g.line(
@@ -2351,36 +2349,10 @@ function renderProcedureBuilder(g, proc) {
     g.line("}");
     g.break();
     writeDocComment(g, {
-      fallback: "Sets the exact retry configuration for this procedure call, including max attempts."
-    });
-    g.line(
-      `withRetryConfig(config: RetryConfig): Proc${proc.rpcName}${proc.name}Builder {`
-    );
-    g.block(() => {
-      g.line(
-        "this.retryConfig = normalizeRetryConfig(config, config.maxAttempts);"
-      );
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
       fallback: "Configures timeout behavior for this procedure call."
     });
     g.line(
       `withTimeout(config: Partial<TimeoutConfig>): Proc${proc.rpcName}${proc.name}Builder {`
-    );
-    g.block(() => {
-      g.line("this.timeoutConfig = normalizeTimeoutConfig(config);");
-      g.line("return this;");
-    });
-    g.line("}");
-    g.break();
-    writeDocComment(g, {
-      fallback: "Sets the exact timeout configuration for this procedure call."
-    });
-    g.line(
-      `withTimeoutConfig(config: TimeoutConfig): Proc${proc.rpcName}${proc.name}Builder {`
     );
     g.block(() => {
       g.line("this.timeoutConfig = normalizeTimeoutConfig(config);");

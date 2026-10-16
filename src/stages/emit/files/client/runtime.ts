@@ -54,7 +54,7 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
   /**
    * A function that adds or modifies headers before each request.
    *
-   * Header providers are executed in this order: global, RPC-level, procedure-level.
+   * Header providers are executed in this order: global, RPC-level, proc-level.
    * They run before every request attempt, including retries.
    */
   export type HeaderProvider = (
@@ -411,7 +411,7 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
     }
 
     /**
-     * Resolves one procedure definition.
+     * Resolves one proc definition.
      */
     private getProc(
       rpcName: string,
@@ -426,7 +426,7 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
 
     /**
      * Resolves the effective retry configuration for a request.
-     * Priority: procedure-level > RPC-level > global > built-in defaults.
+     * Priority: proc-level > RPC-level > global > built-in defaults.
      */
     private mergeRetryConfig(
       rpcName: string,
@@ -449,7 +449,7 @@ const CLIENT_RUNTIME = dedent(/* ts */ `
 
     /**
      * Resolves the effective timeout configuration for a request.
-     * Priority: procedure-level > RPC-level > global > built-in defaults.
+     * Priority: proc-level > RPC-level > global > built-in defaults.
      */
     private mergeTimeoutConfig(
       rpcName: string,
