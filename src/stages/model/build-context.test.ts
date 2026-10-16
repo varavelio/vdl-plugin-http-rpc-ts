@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { createGeneratorContext } from "./build-context";
 
 describe("createGeneratorContext", () => {
-  it("models annotation-based RPC services and operations", () => {
+  it("models annotation-based HTTP RPC services and operations", () => {
     const context = createGeneratorContext({
       input: pluginInput({
         ir: schema({
@@ -45,7 +45,7 @@ describe("createGeneratorContext", () => {
                 ),
               ]),
               {
-                annotations: [annotation("rpc")],
+                annotations: [annotation("httpRpc")],
               },
             ),
           ],
@@ -59,28 +59,26 @@ describe("createGeneratorContext", () => {
     });
 
     expect(context.services).toHaveLength(1);
-    expect(context.procedures).toHaveLength(1);
-    expect(context.streams).toHaveLength(0);
+    expect(context.procs).toHaveLength(1);
 
     const service = context.services[0];
-    const operation = context.procedures[0];
+    const proc = context.procs[0];
 
     expect(service).toMatchObject({
       name: "Messages",
       accessorName: "messages",
     });
-    expect(operation).toMatchObject({
+    expect(proc).toMatchObject({
       rpcName: "Messages",
       rpcAccessorName: "messages",
       name: "sendMessage",
       clientMethodName: "messagesSendMessage",
       serverMethodName: "sendMessage",
-      operationTypeName: "MessagesSendMessage",
+      procTypeName: "MessagesSendMessage",
       inputTypeName: "MessagesSendMessageInput",
       outputTypeName: "MessagesSendMessageOutput",
-      streamResponseTypeName: "MessagesSendMessageResponse",
     });
-    expect(operation?.annotations.map((item) => item.name)).toEqual(["cache"]);
+    expect(proc?.annotations.map((item) => item.name)).toEqual(["cache"]);
   });
 
   it("allows operations that omit input and output", () => {
@@ -96,7 +94,7 @@ describe("createGeneratorContext", () => {
                 }),
               ]),
               {
-                annotations: [annotation("rpc")],
+                annotations: [annotation("httpRpc")],
               },
             ),
           ],
@@ -109,10 +107,52 @@ describe("createGeneratorContext", () => {
       },
     });
 
-    expect(context.procedures[0]).toMatchObject({
+    expect(context.procs[0]).toMatchObject({
       name: "ping",
       inputTypeName: undefined,
       outputTypeName: undefined,
+    });
+  });
+
+  it("ignores types without httpRpc and orphan proc members", () => {
+    const context = createGeneratorContext({
+      input: pluginInput({
+        ir: schema({
+          types: [
+            typeDef(
+              "Plain",
+              objectType([
+                field("orphan", objectType([]), {
+                  annotations: [annotation("proc")],
+                }),
+              ]),
+            ),
+            typeDef(
+              "Users",
+              objectType([
+                field("ping", objectType([]), {
+                  annotations: [annotation("proc")],
+                }),
+              ]),
+              {
+                annotations: [annotation("httpRpc")],
+              },
+            ),
+          ],
+        }),
+      }),
+      generatorOptions: {
+        target: "client",
+        typesImport: "../types/index.js",
+        importExtension: "js",
+      },
+    });
+
+    expect(context.services).toHaveLength(1);
+    expect(context.procs).toHaveLength(1);
+    expect(context.procs[0]).toMatchObject({
+      rpcName: "Users",
+      name: "ping",
     });
   });
 });

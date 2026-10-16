@@ -22,22 +22,15 @@ export type GeneratorOptions = {
 };
 
 /**
- * Supported RPC operation kinds.
+ * Structured descriptor for a VPP-2 procedure discovered in the IR.
  */
-export type OperationKind = "proc" | "stream";
-
-/**
- * Structured descriptor for a procedure or stream discovered in the IR.
- */
-export type OperationDescriptor = {
-  kind: OperationKind;
+export type ProcDescriptor = {
   rpcName: string;
   rpcAccessorName: string;
   name: string;
   clientMethodName: string;
   serverMethodName: string;
-  operationTypeName: string;
-  streamResponseTypeName: string;
+  procTypeName: string;
   inputTypeName?: string;
   outputTypeName?: string;
   position: Position;
@@ -49,7 +42,7 @@ export type OperationDescriptor = {
 };
 
 /**
- * Structured descriptor for an annotation-based RPC service.
+ * Structured descriptor for an annotation-based HTTP RPC service.
  */
 export type ServiceDescriptor = {
   name: string;
@@ -58,9 +51,7 @@ export type ServiceDescriptor = {
   doc?: string;
   deprecated?: string;
   annotations: Annotation[];
-  operations: OperationDescriptor[];
-  procedures: OperationDescriptor[];
-  streams: OperationDescriptor[];
+  procs: ProcDescriptor[];
 };
 
 /**
@@ -71,6 +62,5 @@ export type GeneratorContext = {
   schema: IrSchema;
   options: GeneratorOptions;
   services: ServiceDescriptor[];
-  procedures: OperationDescriptor[];
-  streams: OperationDescriptor[];
+  procs: ProcDescriptor[];
 };
