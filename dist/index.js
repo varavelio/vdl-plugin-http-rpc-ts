@@ -2476,8 +2476,7 @@ var FETCH_ADAPTER = dedent2(
    */
   export class FetchAdapter implements HTTPAdapter {
     private readonly request: Request;
-    private readonly headers: Map<string, string>;
-    private readonly chunks: string[];
+    private body: string;
     private readonly maxBodyBytes: number;
     private readonly closeCallbacks: Array<() => void>;
     private aborted: boolean;
@@ -2488,8 +2487,7 @@ var FETCH_ADAPTER = dedent2(
       }
 
       this.request = request;
-      this.headers = new Map();
-      this.chunks = [];
+      this.body = "";
       this.maxBodyBytes = maxBodyBytes > 0 ? maxBodyBytes : defaultMaxBodyBytes;
       this.closeCallbacks = [];
       this.aborted = false;
@@ -2528,25 +2526,13 @@ var FETCH_ADAPTER = dedent2(
       return JSON.parse(text);
     }
 
-    /** Sets a response header. */
-    setHeader(key: string, value: string): void {
-      this.headers.set(key, value);
-    }
-
-    /** Writes data to the buffered response body. */
-    write(data: string): void {
+    /** Buffers the full JSON response body. Content-Type is fixed by toResponse. */
+    send(body: string): void {
       if (this.aborted) {
         return;
       }
 
-      this.chunks.push(data);
-    }
-
-    /** Ends the response. */
-    end(): void {
-      for (const callback of this.closeCallbacks) {
-        callback();
-      }
+      this.body = body;
     }
 
     /** Registers a callback for when the request is aborted. */
@@ -2559,9 +2545,9 @@ var FETCH_ADAPTER = dedent2(
 
     /** Builds a buffered JSON response after a procedure completes. */
     toResponse(): Response {
-      return new Response(this.chunks.join(""), {
+      return new Response(this.body, {
         status: 200,
-        headers: Object.fromEntries(this.headers),
+        headers: { "Content-Type": "application/json" },
       });
     }
   }
@@ -2792,19 +2778,11 @@ var SERVER_RUNTIME = dedent2(
     json(): Promise<unknown>;
 
     /**
-     * Sets a response header with the specified key-value pair.
+     * Sends the full JSON response body with HTTP 200 semantics.
+     * Called once per request. Adapters set Content-Type and close
+     * the response as their platform requires.
      */
-    setHeader(key: string, value: string): void;
-
-    /**
-     * Writes data to the response. Called once with the full JSON envelope.
-     */
-    write(data: string): void;
-
-    /**
-     * Signals that the response is complete.
-     */
-    end(): void;
+    send(body: string): void;
 
     /**
      * Registers a callback to be invoked when the connection is closed by the client.
@@ -3216,13 +3194,11 @@ var SERVER_RUNTIME = dedent2(
      * Encoding failures fall back to a generic envelope.
      */
     private writeProcResponse(adapter: HTTPAdapter, response: Response<unknown>): void {
-      adapter.setHeader("Content-Type", "application/json");
       try {
-        adapter.write(JSON.stringify(response));
+        adapter.send(JSON.stringify(response));
       } catch {
-        adapter.write(GENERIC_ERROR_ENVELOPE);
+        adapter.send(GENERIC_ERROR_ENVELOPE);
       }
-      adapter.end();
     }
   }
 `
@@ -3708,24 +3684,16 @@ var NODE_ADAPTER = dedent2(
       return this.bodyPromise ?? {};
     }
 
-    /** Sets a response header. */
-    setHeader(key: string, value: string): void {
-      if (!this.res.headersSent) {
-        this.res.setHeader(key, value);
-      }
-    }
-
-    /** Writes data to the response body. */
-    write(data: string): void {
+    /** Writes the full JSON response body and ends the response. */
+    send(body: string): void {
       if (this.closed || this.res.writableEnded) {
         return;
       }
 
-      this.res.write(data);
-    }
-
-    /** Ends the response. */
-    end(): void {
+      if (!this.res.headersSent) {
+        this.res.setHeader("Content-Type", "application/json");
+      }
+      this.res.write(body);
       if (!this.res.writableEnded) {
         this.res.end();
       }

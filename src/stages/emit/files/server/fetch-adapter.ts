@@ -41,8 +41,7 @@ const FETCH_ADAPTER = dedent(/* ts */ `
    */
   export class FetchAdapter implements HTTPAdapter {
     private readonly request: Request;
-    private readonly headers: Map<string, string>;
-    private readonly chunks: string[];
+    private body: string;
     private readonly maxBodyBytes: number;
     private readonly closeCallbacks: Array<() => void>;
     private aborted: boolean;
@@ -53,8 +52,7 @@ const FETCH_ADAPTER = dedent(/* ts */ `
       }
 
       this.request = request;
-      this.headers = new Map();
-      this.chunks = [];
+      this.body = "";
       this.maxBodyBytes = maxBodyBytes > 0 ? maxBodyBytes : defaultMaxBodyBytes;
       this.closeCallbacks = [];
       this.aborted = false;
@@ -93,25 +91,13 @@ const FETCH_ADAPTER = dedent(/* ts */ `
       return JSON.parse(text);
     }
 
-    /** Sets a response header. */
-    setHeader(key: string, value: string): void {
-      this.headers.set(key, value);
-    }
-
-    /** Writes data to the buffered response body. */
-    write(data: string): void {
+    /** Buffers the full JSON response body. Content-Type is fixed by toResponse. */
+    send(body: string): void {
       if (this.aborted) {
         return;
       }
 
-      this.chunks.push(data);
-    }
-
-    /** Ends the response. */
-    end(): void {
-      for (const callback of this.closeCallbacks) {
-        callback();
-      }
+      this.body = body;
     }
 
     /** Registers a callback for when the request is aborted. */
@@ -124,9 +110,9 @@ const FETCH_ADAPTER = dedent(/* ts */ `
 
     /** Builds a buffered JSON response after a procedure completes. */
     toResponse(): Response {
-      return new Response(this.chunks.join(""), {
+      return new Response(this.body, {
         status: 200,
-        headers: Object.fromEntries(this.headers),
+        headers: { "Content-Type": "application/json" },
       });
     }
   }

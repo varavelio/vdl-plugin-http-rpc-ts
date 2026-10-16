@@ -172,24 +172,16 @@ const NODE_ADAPTER = dedent(/* ts */ `
       return this.bodyPromise ?? {};
     }
 
-    /** Sets a response header. */
-    setHeader(key: string, value: string): void {
-      if (!this.res.headersSent) {
-        this.res.setHeader(key, value);
-      }
-    }
-
-    /** Writes data to the response body. */
-    write(data: string): void {
+    /** Writes the full JSON response body and ends the response. */
+    send(body: string): void {
       if (this.closed || this.res.writableEnded) {
         return;
       }
 
-      this.res.write(data);
-    }
-
-    /** Ends the response. */
-    end(): void {
+      if (!this.res.headersSent) {
+        this.res.setHeader("Content-Type", "application/json");
+      }
+      this.res.write(body);
       if (!this.res.writableEnded) {
         this.res.end();
       }

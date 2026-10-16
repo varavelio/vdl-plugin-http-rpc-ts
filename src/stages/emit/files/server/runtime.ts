@@ -23,19 +23,11 @@ const SERVER_RUNTIME = dedent(/* ts */ `
     json(): Promise<unknown>;
 
     /**
-     * Sets a response header with the specified key-value pair.
+     * Sends the full JSON response body with HTTP 200 semantics.
+     * Called once per request. Adapters set Content-Type and close
+     * the response as their platform requires.
      */
-    setHeader(key: string, value: string): void;
-
-    /**
-     * Writes data to the response. Called once with the full JSON envelope.
-     */
-    write(data: string): void;
-
-    /**
-     * Signals that the response is complete.
-     */
-    end(): void;
+    send(body: string): void;
 
     /**
      * Registers a callback to be invoked when the connection is closed by the client.
@@ -447,13 +439,11 @@ const SERVER_RUNTIME = dedent(/* ts */ `
      * Encoding failures fall back to a generic envelope.
      */
     private writeProcResponse(adapter: HTTPAdapter, response: Response<unknown>): void {
-      adapter.setHeader("Content-Type", "application/json");
       try {
-        adapter.write(JSON.stringify(response));
+        adapter.send(JSON.stringify(response));
       } catch {
-        adapter.write(GENERIC_ERROR_ENVELOPE);
+        adapter.send(GENERIC_ERROR_ENVELOPE);
       }
-      adapter.end();
     }
   }
 `);
