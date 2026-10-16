@@ -53,7 +53,7 @@ const CORE_RUNTIME = dedent(/* ts */ `
    * Deep copies annotation payloads so middleware cannot mutate shared state.
    * Scalars are immutable and shared safely; arrays and objects recurse.
    */
-  export function cloneAnnotationArgument(argument: AnnotationValue | undefined): AnnotationValue | undefined {
+  function cloneAnnotationArgument(argument: AnnotationValue | undefined): AnnotationValue | undefined {
     if (Array.isArray(argument)) {
       return argument.map((item) => cloneAnnotationArgument(item) as AnnotationValue);
     }
@@ -72,7 +72,7 @@ const CORE_RUNTIME = dedent(/* ts */ `
   /**
    * Returns an isolated copy of one procedure definition for a single request.
    */
-  export function cloneProcDefinition(proc: ProcDefinition): ProcDefinition {
+  function cloneProcDefinition(proc: ProcDefinition): ProcDefinition {
     return {
       ...proc,
       annotations: proc.annotations.map((annotation) => ({
@@ -100,7 +100,7 @@ const CORE_RUNTIME = dedent(/* ts */ `
   /**
    * Runtime helpers for the generated Void shape.
    */
-  export const Void = {
+  const Void = {
     /** Parses a JSON string into an empty object. */
     parse(json: string): Void {
       const input = JSON.parse(json) as unknown;

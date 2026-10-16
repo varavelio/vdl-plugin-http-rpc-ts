@@ -151,7 +151,17 @@ describe("generate", () => {
       "Response body too large",
     );
     expect(fileContent(output, "client.ts")).toContain(
-      "export function cloneProcDefinition(proc: ProcDefinition): ProcDefinition",
+      "function cloneProcDefinition(proc: ProcDefinition): ProcDefinition",
+    );
+    expect(fileContent(output, "client.ts")).not.toContain(
+      "export function cloneProcDefinition",
+    );
+    expect(fileContent(output, "client.ts")).not.toContain(
+      "export function cloneAnnotationArgument",
+    );
+    expect(fileContent(output, "client.ts")).not.toContain("export const Void");
+    expect(fileContent(output, "client.ts")).toContain(
+      "export function asError(err: unknown): VdlError",
     );
   });
 
@@ -222,6 +232,12 @@ describe("generate", () => {
     );
     expect(fileContent(output, "adapters/fetch.ts")).toContain(
       "FetchAdapter requires a non-null Request",
+    );
+    expect(fileContent(output, "adapters/fetch.ts")).toContain(
+      "function parseRpcPath(",
+    );
+    expect(fileContent(output, "adapters/fetch.ts")).not.toContain(
+      "export function parseRpcPath",
     );
   });
 

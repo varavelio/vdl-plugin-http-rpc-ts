@@ -168,7 +168,7 @@ const FETCH_ADAPTER = dedent(/* ts */ `
   /**
    * Extracts RPC and procedure names from a URL path.
    */
-  export function parseRpcPath(
+  function parseRpcPath(
     url: string | URL,
     prefix?: string,
   ): { rpcName: string; procName: string } | null {
