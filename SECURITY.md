@@ -18,6 +18,8 @@ Adapters enforce the cap while
 buffering and the runtime re-checks buffered text, so even a faulty custom
 adapter fails closed.
 
+Bodies pre-parsed by web frameworks (Express and similar) bypass the byte cap by nature; those rely on the framework's own request size limit.
+
 **Response size.** The client applies the same rule in the other direction:
 at most 4 MiB per response, tunable with `WithMaxResponseBodyBytes`.
 A compromised or misbehaving server cannot exhaust client memory.

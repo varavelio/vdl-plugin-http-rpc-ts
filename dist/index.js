@@ -3613,6 +3613,9 @@ var NODE_ADAPTER = dedent2(
     /**
      * Creates a new NodeAdapter.
      *
+     * Pre-parsed bodies bypass the byte cap, so the providing framework
+     * must enforce its own request size limit.
+     *
      * @param req - The Node.js IncomingMessage (request)
      * @param res - The Node.js ServerResponse
      * @param parsedBody - Optional pre-parsed body (from Express body-parser, etc.)
