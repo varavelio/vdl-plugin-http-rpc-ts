@@ -111,13 +111,13 @@ function renderServerFacade(
     g.block(() => {
       g.line("props: T,");
       g.line("rpcName: string,");
-      g.line("operationName: string,");
+      g.line("procName: string,");
       g.line("httpAdapter: HTTPAdapter,");
     });
     g.line("): Promise<void> {");
     g.block(() => {
       g.line(
-        "return this.intServer.handleRequest(props, rpcName, operationName, httpAdapter);",
+        "return this.intServer.handleRequest(props, rpcName, procName, httpAdapter);",
       );
     });
     g.line("}");
@@ -344,7 +344,7 @@ function renderProcedureEntry(
         g.line("if (outputError !== null) {");
         g.block(() => {
           g.line(
-            'throw new Error("Internal error: unexpected output for " + cSpecific.rpcName + "." + cSpecific.procedureName);',
+            'throw new Error("Internal error: unexpected output for " + cSpecific.rpcName + "." + cSpecific.procName);',
           );
         });
         g.line("}");

@@ -27,7 +27,7 @@ export function renderCatalogSource(context: GeneratorContext): string {
   return [
     "/**",
     " * VDLProcs lists every generated procedure definition with preserved schema metadata.",
-    " * Use it for introspection, tracing, and building operation-aware tooling.",
+    " * Use it for introspection, tracing, and building procedure-aware tooling.",
     " */",
     "export const VDLProcs: ProcDefinition[] = [",
     procs,

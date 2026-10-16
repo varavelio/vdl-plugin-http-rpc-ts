@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { createGeneratorContext } from "./build-context";
 
 describe("createGeneratorContext", () => {
-  it("models annotation-based HTTP RPC services and operations", () => {
+  it("models annotation-based HTTP RPC services and procs", () => {
     const context = createGeneratorContext({
       input: pluginInput({
         ir: schema({
@@ -81,7 +81,7 @@ describe("createGeneratorContext", () => {
     expect(proc?.annotations.map((item) => item.name)).toEqual(["cache"]);
   });
 
-  it("allows operations that omit input and output", () => {
+  it("allows procs that omit input and output", () => {
     const context = createGeneratorContext({
       input: pluginInput({
         ir: schema({

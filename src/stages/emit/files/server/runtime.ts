@@ -97,24 +97,14 @@ const SERVER_RUNTIME = dedent(/* ts */ `
       return this.proc.rpcRoute;
     }
 
-    /** Procedure name resolved from the current procedure. */
-    get procedureName(): string {
+    /** Procedure name resolved from the current proc. */
+    get procName(): string {
       return this.proc.name;
     }
 
     /** VPP-2 transport path for the current procedure. */
     get path(): string {
       return this.proc.path;
-    }
-
-    /** Alias for procedureName kept for compatibility. */
-    get operationName(): string {
-      return this.proc.name;
-    }
-
-    /** Alias for the resolved procedure definition kept for compatibility. */
-    get operation(): ProcDefinition {
-      return this.proc;
     }
 
     /** Schema annotations preserved for this procedure. */

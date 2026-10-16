@@ -10,10 +10,7 @@ import {
 } from "@varavel/vdl-plugin-sdk/utils/deprecations";
 import { getAnnotation } from "@varavel/vdl-plugin-sdk/utils/ir";
 import * as strings from "@varavel/vdl-plugin-sdk/utils/strings";
-import {
-  toClientOperationMethodName,
-  toInlineTypeName,
-} from "../../shared/naming";
+import { toClientProcMethodName, toInlineTypeName } from "../../shared/naming";
 import type {
   GeneratorContext,
   GeneratorOptions,
@@ -72,7 +69,7 @@ function buildServiceDescriptor(typeDef: TypeDef): ServiceDescriptor {
     position: typeDef.position,
     doc: typeDef.doc,
     deprecated: deprecationNote(typeDef.annotations),
-    annotations: filterOperationalAnnotations(typeDef.annotations, "httpRpc"),
+    annotations: filterProcAnnotations(typeDef.annotations, "httpRpc"),
     procs,
   };
 }
@@ -88,15 +85,15 @@ function buildProcDescriptor(
     return undefined;
   }
 
-  const inputField = findOperationField(field, "input");
-  const outputField = findOperationField(field, "output");
+  const inputField = findProcField(field, "input");
+  const outputField = findProcField(field, "output");
   const procTypeName = toInlineTypeName(serviceType.name, field.name);
 
   return {
     rpcName: serviceType.name,
     rpcAccessorName: strings.camelCase(serviceType.name),
     name: field.name,
-    clientMethodName: toClientOperationMethodName(serviceType.name, field.name),
+    clientMethodName: toClientProcMethodName(serviceType.name, field.name),
     serverMethodName: field.name,
     procTypeName,
     inputTypeName: inputField
@@ -108,22 +105,17 @@ function buildProcDescriptor(
     position: field.position,
     doc: field.doc,
     deprecated: deprecationNote(field.annotations),
-    annotations: filterOperationalAnnotations(field.annotations, "proc"),
+    annotations: filterProcAnnotations(field.annotations, "proc"),
     inputField,
     outputField,
   };
 }
 
 /**
- * Finds the named `input` or `output` field inside an operation object.
+ * Finds the named `input` or `output` field inside a proc object.
  */
-function findOperationField(
-  operationField: Field,
-  name: string,
-): Field | undefined {
-  return operationField.typeRef.objectFields?.find(
-    (field) => field.name === name,
-  );
+function findProcField(procField: Field, name: string): Field | undefined {
+  return procField.typeRef.objectFields?.find((field) => field.name === name);
 }
 
 /**
@@ -140,7 +132,7 @@ function deprecationNote(annotations: Annotation[]): string | undefined {
 /**
  * Removes a marker annotation while preserving the remaining semantic metadata.
  */
-function filterOperationalAnnotations(
+function filterProcAnnotations(
   annotations: Annotation[],
   marker: "httpRpc" | "proc",
 ): Annotation[] {

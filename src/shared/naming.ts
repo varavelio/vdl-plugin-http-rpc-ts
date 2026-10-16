@@ -11,13 +11,13 @@ export function toInlineTypeName(
 }
 
 /**
- * Returns the client-side flattened method name for a service operation.
+ * Returns the client-side flattened method name for a service procedure.
  */
-export function toClientOperationMethodName(
+export function toClientProcMethodName(
   rpcName: string,
-  operationName: string,
+  procName: string,
 ): string {
-  return `${strings.camelCase(rpcName)}${strings.pascalCase(operationName)}`;
+  return `${strings.camelCase(rpcName)}${strings.pascalCase(procName)}`;
 }
 
 /**

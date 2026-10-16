@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  toClientOperationMethodName,
+  toClientProcMethodName,
   toInlineTypeName,
   toLowerFirst,
 } from "./naming";
@@ -29,8 +29,6 @@ describe("inline type names", () => {
   });
 
   it("derives flattened client method names", () => {
-    expect(toClientOperationMethodName("Messages", "send")).toBe(
-      "messagesSend",
-    );
+    expect(toClientProcMethodName("Messages", "send")).toBe("messagesSend");
   });
 });

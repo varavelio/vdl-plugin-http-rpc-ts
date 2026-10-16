@@ -29,7 +29,7 @@ function main() {
     }
   }
   if (!foundProc) {
-    console.error("MyProc operation not found in VDLProcs");
+    console.error("MyProc procedure not found in VDLProcs");
     process.exit(1);
   }
 

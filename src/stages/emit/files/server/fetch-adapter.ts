@@ -179,12 +179,12 @@ const FETCH_ADAPTER = dedent(/* ts */ `
   }
 
   /**
-   * Extracts RPC name and procedure name from a URL path.
+   * Extracts RPC and procedure names from a URL path.
    */
   export function parseRpcPath(
     url: string | URL,
     prefix?: string,
-  ): { rpcName: string; operationName: string } | null {
+  ): { rpcName: string; procName: string } | null {
     const parsedUrl = typeof url === "string" ? new URL(url) : url;
     let pathname = parsedUrl.pathname;
 
@@ -200,13 +200,13 @@ const FETCH_ADAPTER = dedent(/* ts */ `
       return null;
     }
 
-    const operationName = segments.pop();
+    const procName = segments.pop();
     const rpcName = segments.pop();
-    if (!rpcName || !operationName) {
+    if (!rpcName || !procName) {
       return null;
     }
 
-    return { rpcName, operationName };
+    return { rpcName, procName };
   }
 
   /**
@@ -309,7 +309,7 @@ const FETCH_ADAPTER = dedent(/* ts */ `
         await server.handleRequest(
           props,
           parsed.rpcName,
-          parsed.operationName,
+          parsed.procName,
           adapter,
         );
       } catch (error) {

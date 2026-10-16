@@ -147,14 +147,14 @@ async function main() {
     const bodyStr = Buffer.concat(buffers).toString();
     const parsedBody = bodyStr ? JSON.parse(bodyStr) : {};
 
-    // Extract RPC and operation from URL
+    // Extract RPC and procedure from URL
     const parts = req.url?.split("/") || [];
     const rpcName = parts[2];
-    const operationName = parts[3];
+    const procName = parts[3];
 
     // Use NodeAdapter directly with pre-parsed body
     const adapter = new NodeAdapter(req, res, parsedBody);
-    await server.handleRequest({}, rpcName, operationName, adapter);
+    await server.handleRequest({}, rpcName, procName, adapter);
   });
 
   await new Promise<void>((resolve) => {

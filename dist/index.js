@@ -603,10 +603,10 @@ function toInlineTypeName(parentTypeName, fieldName) {
   return `${parentTypeName}${pascalCase(fieldName)}`;
 }
 __name(toInlineTypeName, "toInlineTypeName");
-function toClientOperationMethodName(rpcName, operationName) {
-  return `${camelCase(rpcName)}${pascalCase(operationName)}`;
+function toClientProcMethodName(rpcName, procName) {
+  return `${camelCase(rpcName)}${pascalCase(procName)}`;
 }
-__name(toClientOperationMethodName, "toClientOperationMethodName");
+__name(toClientProcMethodName, "toClientProcMethodName");
 function toLowerFirst(value) {
   if (value.length === 0) return value;
   return value.charAt(0).toLowerCase() + value.slice(1);
@@ -625,7 +625,7 @@ function renderCatalogSource(context) {
   return [
     "/**",
     " * VDLProcs lists every generated procedure definition with preserved schema metadata.",
-    " * Use it for introspection, tracing, and building operation-aware tooling.",
+    " * Use it for introspection, tracing, and building procedure-aware tooling.",
     " */",
     "export const VDLProcs: ProcDefinition[] = [",
     procs,
@@ -954,8 +954,8 @@ var CLIENT_RUNTIME = dedent2(
     error: VdlError;
     /** Original input payload. */
     input: unknown;
-    /** Resolved operation metadata, including annotations. */
-    operation?: ProcDefinition;
+    /** Resolved procedure metadata, including annotations. */
+    proc?: ProcDefinition;
     /** Whether the generated runtime would retry without custom logic. */
     defaultRetryable: boolean;
   }
@@ -988,7 +988,7 @@ var CLIENT_RUNTIME = dedent2(
   /**
    * A function that adds or modifies headers before each request.
    *
-   * Header providers are executed in this order: global, RPC-level, operation-level.
+   * Header providers are executed in this order: global, RPC-level, procedure-level.
    * They run before every request attempt, including retries.
    */
   export type HeaderProvider = (
@@ -1000,10 +1000,10 @@ var CLIENT_RUNTIME = dedent2(
    */
   export interface RequestInfo {
     rpcName: string;
-    operationName: string;
+    procName: string;
     input: unknown;
     type: "proc";
-    operation?: ProcDefinition;
+    proc?: ProcDefinition;
   }
 
   /** Final function invoked by the interceptor chain. */
@@ -1196,11 +1196,11 @@ var CLIENT_RUNTIME = dedent2(
     private fetchFn: FetchLike;
 
     /**
-     * Registry of valid operations.
+     * Registry of valid procedures.
      * Structure: rpcName -> procName -> ProcDefinition
      * Used to validate requests and fail fast on typos.
      */
-    private operationDefs: Map<string, Map<string, ProcDefinition>>;
+    private procDefs: Map<string, Map<string, ProcDefinition>>;
 
     /** Global header providers applied to all requests. */
     private headerProviders: HeaderProvider[] = [];
@@ -1245,17 +1245,17 @@ var CLIENT_RUNTIME = dedent2(
       this.baseURL = baseURL.replace(/[/]+$/gu, "");
       this.fetchFn = (globalThis.fetch ?? null) as FetchLike;
       this.maxResponseBodyBytes = defaultMaxResponseBodyBytes;
-      this.operationDefs = new Map();
+      this.procDefs = new Map();
 
       const ensureRPC = (rpcName: string) => {
-        if (!this.operationDefs.has(rpcName)) {
-          this.operationDefs.set(rpcName, new Map());
+        if (!this.procDefs.has(rpcName)) {
+          this.procDefs.set(rpcName, new Map());
         }
       };
 
       for (const def of procDefs) {
         ensureRPC(def.rpcName);
-        this.operationDefs.get(def.rpcName)?.set(def.name, def);
+        this.procDefs.get(def.rpcName)?.set(def.name, def);
       }
 
       for (const applyOption of opts) {
@@ -1347,11 +1347,11 @@ var CLIENT_RUNTIME = dedent2(
     /**
      * Resolves one procedure definition.
      */
-    private getOperation(
+    private getProc(
       rpcName: string,
-      operationName: string,
+      procName: string,
     ): ProcDefinition | undefined {
-      const proc = this.operationDefs.get(rpcName)?.get(operationName);
+      const proc = this.procDefs.get(rpcName)?.get(procName);
       if (!proc) {
         return undefined;
       }
@@ -1360,7 +1360,7 @@ var CLIENT_RUNTIME = dedent2(
 
     /**
      * Resolves the effective retry configuration for a request.
-     * Priority: operation-level > RPC-level > global > built-in defaults.
+     * Priority: procedure-level > RPC-level > global > built-in defaults.
      */
     private mergeRetryConfig(
       rpcName: string,
@@ -1383,7 +1383,7 @@ var CLIENT_RUNTIME = dedent2(
 
     /**
      * Resolves the effective timeout configuration for a request.
-     * Priority: operation-level > RPC-level > global > built-in defaults.
+     * Priority: procedure-level > RPC-level > global > built-in defaults.
      */
     private mergeTimeoutConfig(
       rpcName: string,
@@ -1399,12 +1399,12 @@ var CLIENT_RUNTIME = dedent2(
 
     /**
      * Applies all header providers to a request headers.
-     * Order: global providers -> RPC providers -> operation providers.
+     * Order: global providers -> RPC providers -> procedure providers.
      */
     private async applyHeaders(
       rpcName: string,
       headers: Record<string, string>,
-      opHeaderProviders: HeaderProvider[],
+      procHeaderProviders: HeaderProvider[],
     ): Promise<void> {
       for (const provider of this.headerProviders) {
         await provider(headers);
@@ -1415,7 +1415,7 @@ var CLIENT_RUNTIME = dedent2(
         await provider(headers);
       }
 
-      for (const provider of opHeaderProviders) {
+      for (const provider of procHeaderProviders) {
         await provider(headers);
       }
     }
@@ -1457,12 +1457,12 @@ var CLIENT_RUNTIME = dedent2(
       rpcName: string,
       procName: string,
       input: unknown,
-      opHeaderProviders: HeaderProvider[],
-      opRetryConf?: RetryConfig,
-      opTimeoutConf?: TimeoutConfig,
-      opSignal?: AbortSignal,
+      procHeaderProviders: HeaderProvider[],
+      procRetryConf?: RetryConfig,
+      procTimeoutConf?: TimeoutConfig,
+      procSignal?: AbortSignal,
     ): Promise<Response<any>> {
-      if (opSignal?.aborted) {
+      if (procSignal?.aborted) {
         return {
           ok: false,
           error: new VdlError({
@@ -1473,28 +1473,28 @@ var CLIENT_RUNTIME = dedent2(
         };
       }
 
-      const operation = this.getOperation(rpcName, procName);
+      const proc = this.getProc(rpcName, procName);
       const reqInfo: RequestInfo = {
         rpcName,
-        operationName: procName,
+        procName,
         input,
         type: "proc",
-        operation,
+        proc,
       };
 
       const invoker: Invoker = async (req) => {
-        if (!operation) {
+        if (!proc) {
           return {
             ok: false,
             error: new VdlError({
               message:
                 req.rpcName +
                 "." +
-                req.operationName +
-                " procedure not found in schema",
+                req.procName +
+                " proc not found in schema",
               category: "ClientError",
               code: "INVALID_PROC",
-              details: { rpc: req.rpcName, procedure: req.operationName },
+              details: { rpc: req.rpcName, proc: req.procName },
             }),
           };
         }
@@ -1510,7 +1510,7 @@ var CLIENT_RUNTIME = dedent2(
                 "Failed to encode input for " +
                 req.rpcName +
                 "." +
-                req.operationName +
+                req.procName +
                 ": " +
                 String(error),
               category: "ClientError",
@@ -1519,13 +1519,13 @@ var CLIENT_RUNTIME = dedent2(
           };
         }
 
-        const retryConf = this.mergeRetryConfig(req.rpcName, opRetryConf);
-        const timeoutConf = this.mergeTimeoutConfig(req.rpcName, opTimeoutConf);
-        const url = this.baseURL + (operation.path as string);
+        const retryConf = this.mergeRetryConfig(req.rpcName, procRetryConf);
+        const timeoutConf = this.mergeTimeoutConfig(req.rpcName, procTimeoutConf);
+        const url = this.baseURL + (proc.path as string);
         let lastError: VdlError | null = null;
 
         for (let attempt = 1; attempt <= retryConf.maxAttempts; attempt += 1) {
-          if (opSignal?.aborted) {
+          if (procSignal?.aborted) {
             return {
               ok: false,
               error: new VdlError({
@@ -1539,7 +1539,7 @@ var CLIENT_RUNTIME = dedent2(
           const abortController = new AbortController();
           let timeoutId: ReturnType<typeof setTimeout> | undefined;
           const onExternalAbort = () => abortController.abort();
-          opSignal?.addEventListener("abort", onExternalAbort);
+          procSignal?.addEventListener("abort", onExternalAbort);
 
           try {
             if (timeoutConf.timeoutMs > 0) {
@@ -1555,12 +1555,12 @@ var CLIENT_RUNTIME = dedent2(
             };
 
             try {
-              await this.applyHeaders(req.rpcName, headers, opHeaderProviders);
+              await this.applyHeaders(req.rpcName, headers, procHeaderProviders);
             } catch (error) {
               if (timeoutId !== undefined) {
                 clearTimeout(timeoutId);
               }
-              opSignal?.removeEventListener("abort", onExternalAbort);
+              procSignal?.removeEventListener("abort", onExternalAbort);
               return { ok: false, error: asError(error) };
             }
 
@@ -1584,7 +1584,7 @@ var CLIENT_RUNTIME = dedent2(
                   maxAttempts: retryConf.maxAttempts,
                   error,
                   input,
-                  operation,
+                  proc,
                   defaultRetryable: true,
                 }));
 
@@ -1600,7 +1600,7 @@ var CLIENT_RUNTIME = dedent2(
             if (timeoutId !== undefined) {
               clearTimeout(timeoutId);
             }
-            opSignal?.removeEventListener("abort", onExternalAbort);
+            procSignal?.removeEventListener("abort", onExternalAbort);
 
             if (fetchResponse.status >= 500) {
               const error = new VdlError({
@@ -1617,7 +1617,7 @@ var CLIENT_RUNTIME = dedent2(
                   maxAttempts: retryConf.maxAttempts,
                   error,
                   input,
-                  operation,
+                  proc,
                   defaultRetryable: true,
                 }));
 
@@ -1645,7 +1645,7 @@ var CLIENT_RUNTIME = dedent2(
                   maxAttempts: retryConf.maxAttempts,
                   error,
                   input,
-                  operation,
+                  proc,
                   defaultRetryable: false,
                 }));
 
@@ -1688,7 +1688,7 @@ var CLIENT_RUNTIME = dedent2(
                     maxAttempts: retryConf.maxAttempts,
                     error,
                     input,
-                    operation,
+                    proc,
                     defaultRetryable: false,
                   }));
 
@@ -1726,7 +1726,7 @@ var CLIENT_RUNTIME = dedent2(
                   maxAttempts: retryConf.maxAttempts,
                   error: decodeError,
                   input,
-                  operation,
+                  proc,
                   defaultRetryable: false,
                 }));
 
@@ -1742,9 +1742,9 @@ var CLIENT_RUNTIME = dedent2(
             if (timeoutId !== undefined) {
               clearTimeout(timeoutId);
             }
-            opSignal?.removeEventListener("abort", onExternalAbort);
+            procSignal?.removeEventListener("abort", onExternalAbort);
 
-            if (opSignal?.aborted) {
+            if (procSignal?.aborted) {
               return {
                 ok: false,
                 error: new VdlError({
@@ -1772,7 +1772,7 @@ var CLIENT_RUNTIME = dedent2(
                 maxAttempts: retryConf.maxAttempts,
                 error: normalizedError,
                 input,
-                operation,
+                proc,
                 defaultRetryable: true,
               }));
 
@@ -1853,7 +1853,7 @@ var CLIENT_RUNTIME = dedent2(
     private readonly procDefs: ProcDefinition[];
     private readonly opts: internalClientOption[] = [];
 
-    /** Creates a new builder bound to the generated operation catalog. */
+    /** Creates a new builder bound to the generated procedure catalog. */
     constructor(baseURL: string, procDefs: ProcDefinition[]) {
       this.baseURL = baseURL;
       this.procDefs = procDefs;
@@ -2614,12 +2614,12 @@ var FETCH_ADAPTER = dedent2(
   }
 
   /**
-   * Extracts RPC name and procedure name from a URL path.
+   * Extracts RPC and procedure names from a URL path.
    */
   export function parseRpcPath(
     url: string | URL,
     prefix?: string,
-  ): { rpcName: string; operationName: string } | null {
+  ): { rpcName: string; procName: string } | null {
     const parsedUrl = typeof url === "string" ? new URL(url) : url;
     let pathname = parsedUrl.pathname;
 
@@ -2635,13 +2635,13 @@ var FETCH_ADAPTER = dedent2(
       return null;
     }
 
-    const operationName = segments.pop();
+    const procName = segments.pop();
     const rpcName = segments.pop();
-    if (!rpcName || !operationName) {
+    if (!rpcName || !procName) {
       return null;
     }
 
-    return { rpcName, operationName };
+    return { rpcName, procName };
   }
 
   /**
@@ -2744,7 +2744,7 @@ var FETCH_ADAPTER = dedent2(
         await server.handleRequest(
           props,
           parsed.rpcName,
-          parsed.operationName,
+          parsed.procName,
           adapter,
         );
       } catch (error) {
@@ -2866,24 +2866,14 @@ var SERVER_RUNTIME = dedent2(
       return this.proc.rpcRoute;
     }
 
-    /** Procedure name resolved from the current procedure. */
-    get procedureName(): string {
+    /** Procedure name resolved from the current proc. */
+    get procName(): string {
       return this.proc.name;
     }
 
     /** VPP-2 transport path for the current procedure. */
     get path(): string {
       return this.proc.path;
-    }
-
-    /** Alias for procedureName kept for compatibility. */
-    get operationName(): string {
-      return this.proc.name;
-    }
-
-    /** Alias for the resolved procedure definition kept for compatibility. */
-    get operation(): ProcDefinition {
-      return this.proc;
     }
 
     /** Schema annotations preserved for this procedure. */
@@ -3317,13 +3307,13 @@ function renderServerFacade(g, context) {
     g.block(() => {
       g.line("props: T,");
       g.line("rpcName: string,");
-      g.line("operationName: string,");
+      g.line("procName: string,");
       g.line("httpAdapter: HTTPAdapter,");
     });
     g.line("): Promise<void> {");
     g.block(() => {
       g.line(
-        "return this.intServer.handleRequest(props, rpcName, operationName, httpAdapter);"
+        "return this.intServer.handleRequest(props, rpcName, procName, httpAdapter);"
       );
     });
     g.line("}");
@@ -3515,7 +3505,7 @@ function renderProcedureEntry(g, proc) {
         g.line("if (outputError !== null) {");
         g.block(() => {
           g.line(
-            'throw new Error("Internal error: unexpected output for " + cSpecific.rpcName + "." + cSpecific.procedureName);'
+            'throw new Error("Internal error: unexpected output for " + cSpecific.rpcName + "." + cSpecific.procName);'
           );
         });
         g.line("}");
@@ -3751,16 +3741,16 @@ var NODE_ADAPTER = dedent2(
   }
 
   /**
-   * Extracts RPC name and operation name from a URL path.
+   * Extracts RPC and procedure names from a URL path.
    *
    * @param url - The request URL (e.g., "/rpc/Service/Echo")
    * @param prefix - Optional path prefix to strip (e.g., "/rpc")
-   * @returns Object with rpcName and operationName, or null if parsing fails
+   * @returns Object with rpcName and procName, or null if parsing fails
    */
   function parseNodeRpcPath(
     url: string,
     prefix?: string,
-  ): { rpcName: string; operationName: string } | null {
+  ): { rpcName: string; procName: string } | null {
     let pathname = url.split("?")[0] ?? url;
 
     if (prefix) {
@@ -3775,13 +3765,13 @@ var NODE_ADAPTER = dedent2(
       return null;
     }
 
-    const operationName = segments.pop();
+    const procName = segments.pop();
     const rpcName = segments.pop();
-    if (!rpcName || !operationName) {
+    if (!rpcName || !procName) {
       return null;
     }
 
-    return { rpcName, operationName };
+    return { rpcName, procName };
   }
 
   /**
@@ -3789,7 +3779,7 @@ var NODE_ADAPTER = dedent2(
    */
   export interface NodeHandlerOptions {
     /**
-     * URL path prefix to strip before parsing RPC/operation names.
+     * URL path prefix to strip before parsing RPC/procedure names.
      * Example: "/rpc" or "/api/v1"
      */
     prefix?: string;
@@ -3892,7 +3882,7 @@ var NODE_ADAPTER = dedent2(
         await server.handleRequest(
           props,
           parsed.rpcName,
-          parsed.operationName,
+          parsed.procName,
           adapter,
         );
       } catch (error) {
@@ -3981,7 +3971,7 @@ function buildServiceDescriptor(typeDef) {
     position: typeDef.position,
     doc: typeDef.doc,
     deprecated: deprecationNote(typeDef.annotations),
-    annotations: filterOperationalAnnotations(typeDef.annotations, "httpRpc"),
+    annotations: filterProcAnnotations(typeDef.annotations, "httpRpc"),
     procs
   };
 }
@@ -3990,14 +3980,14 @@ function buildProcDescriptor(serviceType, field) {
   if (!getAnnotation(field.annotations, "proc")) {
     return void 0;
   }
-  const inputField = findOperationField(field, "input");
-  const outputField = findOperationField(field, "output");
+  const inputField = findProcField(field, "input");
+  const outputField = findProcField(field, "output");
   const procTypeName = toInlineTypeName(serviceType.name, field.name);
   return {
     rpcName: serviceType.name,
     rpcAccessorName: camelCase(serviceType.name),
     name: field.name,
-    clientMethodName: toClientOperationMethodName(serviceType.name, field.name),
+    clientMethodName: toClientProcMethodName(serviceType.name, field.name),
     serverMethodName: field.name,
     procTypeName,
     inputTypeName: inputField ? toInlineTypeName(procTypeName, inputField.name) : void 0,
@@ -4005,19 +3995,17 @@ function buildProcDescriptor(serviceType, field) {
     position: field.position,
     doc: field.doc,
     deprecated: deprecationNote(field.annotations),
-    annotations: filterOperationalAnnotations(field.annotations, "proc"),
+    annotations: filterProcAnnotations(field.annotations, "proc"),
     inputField,
     outputField
   };
 }
 __name(buildProcDescriptor, "buildProcDescriptor");
-function findOperationField(operationField, name) {
+function findProcField(procField, name) {
   var _a3;
-  return (_a3 = operationField.typeRef.objectFields) == null ? void 0 : _a3.find(
-    (field) => field.name === name
-  );
+  return (_a3 = procField.typeRef.objectFields) == null ? void 0 : _a3.find((field) => field.name === name);
 }
-__name(findOperationField, "findOperationField");
+__name(findProcField, "findProcField");
 function deprecationNote(annotations) {
   var _a3;
   if (!isDeprecated(annotations)) {
@@ -4026,10 +4014,10 @@ function deprecationNote(annotations) {
   return (_a3 = getDeprecationMessage(annotations)) != null ? _a3 : "";
 }
 __name(deprecationNote, "deprecationNote");
-function filterOperationalAnnotations(annotations, marker) {
+function filterProcAnnotations(annotations, marker) {
   return annotations.filter((annotation) => annotation.name !== marker);
 }
-__name(filterOperationalAnnotations, "filterOperationalAnnotations");
+__name(filterProcAnnotations, "filterProcAnnotations");
 
 // node_modules/@varavel/vdl-plugin-sdk/dist/utils/options/get-option-string.js
 function getOptionString(options, key, defaultValue) {

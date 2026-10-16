@@ -55,7 +55,7 @@ async function main() {
   if (
     !parsed1 ||
     parsed1.rpcName !== "Greeter" ||
-    parsed1.operationName !== "hello"
+    parsed1.procName !== "hello"
   ) {
     console.error("Test 1a FAILED: Expected Greeter/Hello but got:", parsed1);
     process.exit(1);
@@ -65,7 +65,7 @@ async function main() {
   if (
     !parsed2 ||
     parsed2.rpcName !== "Greeter" ||
-    parsed2.operationName !== "hello"
+    parsed2.procName !== "hello"
   ) {
     console.error("Test 1b FAILED: Expected Greeter/Hello but got:", parsed2);
     process.exit(1);
@@ -78,7 +78,7 @@ async function main() {
   if (
     !parsed3 ||
     parsed3.rpcName !== "Calculator" ||
-    parsed3.operationName !== "add"
+    parsed3.procName !== "add"
   ) {
     console.error("Test 1c FAILED: Expected Calculator/Add but got:", parsed3);
     process.exit(1);
@@ -242,10 +242,10 @@ async function main() {
   console.log("Test 5 PASSED");
 
   // =========================================================================
-  // Test 6: Invalid operation returns error
+  // Test 6: Invalid procedure returns error
   // =========================================================================
 
-  console.log("Test 6: Invalid operation returns error");
+  console.log("Test 6: Invalid procedure returns error");
 
   const invalidOpRequest = new Request(
     "http://localhost/rpc/Greeter/nonExistent",
@@ -261,7 +261,7 @@ async function main() {
 
   if (invalidOpResult.ok !== false) {
     console.error(
-      "Test 6 FAILED: Expected error for non-existent operation:",
+      "Test 6 FAILED: Expected error for non-existent procedure:",
       invalidOpResult,
     );
     process.exit(1);

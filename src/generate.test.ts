@@ -259,7 +259,7 @@ describe("generate", () => {
     );
   });
 
-  it("emits no files when the schema has no RPC operations", () => {
+  it("emits no files when the schema has no RPC procs", () => {
     const output = generate(
       pluginInput({
         options: {

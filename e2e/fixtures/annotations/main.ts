@@ -48,7 +48,7 @@ async function main() {
   const baseUrl = `http://localhost:${addr.port}/rpc`;
   const client = NewClient(baseUrl)
     .withInterceptor(async (req, next) => {
-      const names = namesOf(req.operation?.annotations ?? []);
+      const names = namesOf(req.proc?.annotations ?? []);
       if (!names.has("audited") || !names.has("quota")) {
         throw new VdlError({ message: "interceptor missing annotations" });
       }

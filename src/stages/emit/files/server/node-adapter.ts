@@ -205,16 +205,16 @@ const NODE_ADAPTER = dedent(/* ts */ `
   }
 
   /**
-   * Extracts RPC name and operation name from a URL path.
+   * Extracts RPC and procedure names from a URL path.
    *
    * @param url - The request URL (e.g., "/rpc/Service/Echo")
    * @param prefix - Optional path prefix to strip (e.g., "/rpc")
-   * @returns Object with rpcName and operationName, or null if parsing fails
+   * @returns Object with rpcName and procName, or null if parsing fails
    */
   function parseNodeRpcPath(
     url: string,
     prefix?: string,
-  ): { rpcName: string; operationName: string } | null {
+  ): { rpcName: string; procName: string } | null {
     let pathname = url.split("?")[0] ?? url;
 
     if (prefix) {
@@ -229,13 +229,13 @@ const NODE_ADAPTER = dedent(/* ts */ `
       return null;
     }
 
-    const operationName = segments.pop();
+    const procName = segments.pop();
     const rpcName = segments.pop();
-    if (!rpcName || !operationName) {
+    if (!rpcName || !procName) {
       return null;
     }
 
-    return { rpcName, operationName };
+    return { rpcName, procName };
   }
 
   /**
@@ -243,7 +243,7 @@ const NODE_ADAPTER = dedent(/* ts */ `
    */
   export interface NodeHandlerOptions {
     /**
-     * URL path prefix to strip before parsing RPC/operation names.
+     * URL path prefix to strip before parsing RPC/procedure names.
      * Example: "/rpc" or "/api/v1"
      */
     prefix?: string;
@@ -346,7 +346,7 @@ const NODE_ADAPTER = dedent(/* ts */ `
         await server.handleRequest(
           props,
           parsed.rpcName,
-          parsed.operationName,
+          parsed.procName,
           adapter,
         );
       } catch (error) {

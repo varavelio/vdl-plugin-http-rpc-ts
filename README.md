@@ -99,7 +99,7 @@ For `target "server"`:
 - `adapters/node.ts`
 - `adapters/fetch.ts`
 
-If your schema has no discovered `@httpRpc` `@proc` operations, no files are emitted.
+If your schema has no discovered `@httpRpc` or `@proc` annotations, no files are emitted.
 
 ## What You Get
 
@@ -107,7 +107,7 @@ For `target "client"`:
 
 - `NewClient(baseURL).build()` to create a typed client.
 - Flattened procedure builders under `client.procs.*()`.
-- Global and operation-level headers (static or dynamic providers).
+- Global and proc-level headers (static or dynamic providers).
 - Interceptors with typed `inputAs<T>()` input access.
 - Retry/timeout for procedures.
 - Bounded response bodies (`withMaxResponseBodyBytes`, 4 MiB default).
@@ -131,7 +131,7 @@ Both targets include runtime catalogs:
 Non-marker annotations are preserved in procedure metadata and cloned per
 request, so middleware cannot leak state across requests. Service-level
 annotations never propagate to procedures. Handler contexts expose
-`rpcRoute` and `path` alongside `rpcName` and `procedureName`.
+`rpcRoute` and `path` alongside `rpcName` and `procName`.
 
 ## RPC Annotation Model
 
@@ -227,7 +227,7 @@ export default {
 ## Important Notes
 
 - `baseURL` in `NewClient(baseURL)` should point to your RPC prefix (for example: `https://api.example.com/rpc`).
-- The generated client appends `/{lowerFirst(rpcName)}/{procedureName}` automatically following VPP-2.
+- The generated client appends `/{lowerFirst(rpcName)}/{procName}` automatically following VPP-2.
 - `typesImport` must point to the generated output from `vdl-plugin-ts`.
 - To generate both client and server, run this plugin twice (one block per `target`).
 
