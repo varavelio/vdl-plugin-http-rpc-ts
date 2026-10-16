@@ -5,8 +5,41 @@ import { createNodeHandler } from "./gen/adapters/node.ts";
 import { NewClient, VdlError } from "./gen/client.ts";
 import { Server } from "./gen/server.ts";
 
-function namesOf(annotations: { name: string }[]): Set<string> {
-  return new Set(annotations.map((item) => item.name));
+function annotationMap(
+  annotations: { name: string; argument?: unknown }[],
+): Map<string, unknown> {
+  return new Map(annotations.map((item) => [item.name, item.argument]));
+}
+
+function expectProcAnnotations(
+  annotations: { name: string; argument?: unknown }[],
+  side: string,
+): void {
+  const names = annotationMap(annotations);
+  if (!names.has("audited")) {
+    throw new Error(`${side}: missing bare marker audited`);
+  }
+  if (names.get("audited") !== undefined) {
+    throw new Error(`${side}: bare marker must carry no argument`);
+  }
+  const quota = names.get("quota") as any;
+  if (typeof quota !== "object" || quota === null) {
+    throw new Error(`${side}: missing quota object`);
+  }
+  if (quota?.max !== 100 || quota?.burst !== true) {
+    throw new Error(`${side}: bad quota argument`);
+  }
+  if (
+    !Array.isArray(quota?.tags) ||
+    quota.tags.length !== 2 ||
+    quota.tags[0] !== "a" ||
+    quota.tags[1] !== "b"
+  ) {
+    throw new Error(`${side}: bad quota.tags`);
+  }
+  if (names.has("serviceTag")) {
+    throw new Error(`${side}: service-level annotations must not propagate`);
+  }
 }
 
 async function main() {
@@ -16,18 +49,7 @@ async function main() {
     .service()
     .procs.check()
     .handle(async (c) => {
-      const names = namesOf(c.annotations);
-      if (!names.has("audited") || !names.has("quota")) {
-        throw new Error("handler missing proc annotations");
-      }
-      if (names.has("serviceTag")) {
-        throw new Error("service annotations must not propagate");
-      }
-      const quota = c.annotations.find((item) => item.name === "quota")
-        ?.argument as any;
-      if (quota?.max !== 100 || quota?.burst !== true) {
-        throw new Error("handler bad quota argument");
-      }
+      expectProcAnnotations(c.annotations, "handler");
       return { ok: true };
     });
 
@@ -48,9 +70,12 @@ async function main() {
   const baseUrl = `http://localhost:${addr.port}/rpc`;
   const client = NewClient(baseUrl)
     .withInterceptor(async (req, next) => {
-      const names = namesOf(req.proc?.annotations ?? []);
-      if (!names.has("audited") || !names.has("quota")) {
-        throw new VdlError({ message: "interceptor missing annotations" });
+      try {
+        expectProcAnnotations(req.proc?.annotations ?? [], "interceptor");
+      } catch (error) {
+        throw new VdlError({
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
       return next(req);
     })
