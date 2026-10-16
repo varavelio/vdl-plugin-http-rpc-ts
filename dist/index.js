@@ -2706,8 +2706,7 @@ var FETCH_ADAPTER = dedent2(
             ok: false,
             error: {
               code: "NOT_FOUND",
-              message:
-                "Invalid RPC path. Expected: /[prefix/]rpcName/procedureName",
+              message: "Not found",
             },
           }),
           {
@@ -2726,8 +2725,7 @@ var FETCH_ADAPTER = dedent2(
             ok: false,
             error: {
               code: "CONTEXT_ERROR",
-              message: "Failed to create request context",
-              details: { originalError: String(error) },
+              message: "Internal server error",
             },
           }),
           {
@@ -2756,7 +2754,6 @@ var FETCH_ADAPTER = dedent2(
             error: {
               code: "INTERNAL_ERROR",
               message: "Internal server error",
-              details: { originalError: String(error) },
             },
           }),
           {
@@ -3122,7 +3119,7 @@ var SERVER_RUNTIME = dedent2(
         this.writeProcResponse(adapter, {
           ok: false,
           error: new VdlError({
-            message: "Invalid procedure: " + rpcName + "." + procName,
+            message: "Not found",
             code: "INVALID_PROCEDURE",
             category: "ClientError",
           }),
@@ -3854,8 +3851,7 @@ var NODE_ADAPTER = dedent2(
             ok: false,
             error: {
               code: "NOT_FOUND",
-              message:
-                "Invalid RPC path. Expected: /[prefix/]rpcName/procedureName",
+              message: "Not found",
             },
           }),
         );
@@ -3885,8 +3881,7 @@ var NODE_ADAPTER = dedent2(
             ok: false,
             error: {
               code: "CONTEXT_ERROR",
-              message: "Failed to create request context",
-              details: { originalError: String(error) },
+              message: "Internal server error",
             },
           }),
         );
@@ -3912,7 +3907,6 @@ var NODE_ADAPTER = dedent2(
               error: {
                 code: "INTERNAL_ERROR",
                 message: "Internal server error",
-                details: { originalError: String(error) },
               },
             }),
           );

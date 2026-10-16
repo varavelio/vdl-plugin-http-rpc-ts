@@ -48,6 +48,14 @@ encoded (for example, unencodable details from a custom handler), the
 client receives the same plain `Internal error` envelope instead of
 framework text.
 
+Unknown routes and procedures answer a plain `Not found`. The wire never
+carries path schemes, procedure names, or raw internal text: adapter
+failures (bad path, context creation, catch-all) omit `originalError`
+details, and only machine-readable `code` values (`NOT_FOUND`,
+`INVALID_PROCEDURE`, `CONTEXT_ERROR`, `INTERNAL_ERROR`) distinguish the
+cases. Malformed bodies keep their parse detail, which comes from the
+standard JSON parser, not from framework internals.
+
 ## What it does not handle
 
 TLS, rate limiting, and trusting the URLs you configure are your

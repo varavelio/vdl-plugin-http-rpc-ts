@@ -305,8 +305,7 @@ const NODE_ADAPTER = dedent(/* ts */ `
             ok: false,
             error: {
               code: "NOT_FOUND",
-              message:
-                "Invalid RPC path. Expected: /[prefix/]rpcName/procedureName",
+              message: "Not found",
             },
           }),
         );
@@ -336,8 +335,7 @@ const NODE_ADAPTER = dedent(/* ts */ `
             ok: false,
             error: {
               code: "CONTEXT_ERROR",
-              message: "Failed to create request context",
-              details: { originalError: String(error) },
+              message: "Internal server error",
             },
           }),
         );
@@ -363,7 +361,6 @@ const NODE_ADAPTER = dedent(/* ts */ `
               error: {
                 code: "INTERNAL_ERROR",
                 message: "Internal server error",
-                details: { originalError: String(error) },
               },
             }),
           );

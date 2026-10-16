@@ -350,7 +350,7 @@ const SERVER_RUNTIME = dedent(/* ts */ `
         this.writeProcResponse(adapter, {
           ok: false,
           error: new VdlError({
-            message: "Invalid procedure: " + rpcName + "." + procName,
+            message: "Not found",
             code: "INVALID_PROCEDURE",
             category: "ClientError",
           }),
