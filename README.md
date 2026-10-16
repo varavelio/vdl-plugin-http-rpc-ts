@@ -99,46 +99,49 @@ For `target "server"`:
 - `adapters/node.ts`
 - `adapters/fetch.ts`
 
-If your schema has no discovered `@rpc`, `@proc` or `@stream` operations, no files are emitted.
+If your schema has no discovered `@httpRpc` `@proc` operations, no files are emitted.
 
 ## What You Get
 
 For `target "client"`:
 
 - `NewClient(baseURL).build()` to create a typed client.
-- Flattened procedure and stream builders under `client.procs.*()` and `client.streams.*()`.
+- Flattened procedure builders under `client.procs.*()`.
 - Global and operation-level headers (static or dynamic providers).
-- Interceptors.
-- Retry/timeout for procedures and reconnect policies for streams.
-- Stream lifecycle hooks and maximum message size controls.
+- Interceptors with typed `inputAs<T>()` input access.
+- Retry/timeout for procedures.
+- Bounded response bodies (`withMaxResponseBodyBytes`, 4 MiB default).
 
 For `target "server"`:
 
 - `new Server<Props>()` with typed request context.
-- Typed registration APIs for procedures and streams.
-- Middleware at global, RPC, procedure, stream, and stream-emit levels.
+- Typed registration APIs for procedures.
+- Middleware at global, RPC, and procedure levels with typed `inputAs<T>()` input access.
+- Global and RPC-level error handlers (sanitized `Internal error` by default).
+- Bounded request bodies (`setMaxRequestBodyBytes`, 4 MiB default).
+- `createNodeHandler(...)` and `createFetchHandler(...)` adapters for HTTP runtimes.
 - Global and RPC-level error handlers.
-- Global, RPC-level, and stream-level ping configuration.
 - `createNodeHandler(...)` and `createFetchHandler(...)` adapters for HTTP runtimes.
 
 Both targets include runtime catalogs:
 
-- `VDLPaths`
-- `VDLProcedures`
-- `VDLStreams`
+- `VDLPaths` (VPP-2 `lowerFirst(rpcName)` routes)
+- `VDLProcs` (each entry carries `rpcName`, `rpcRoute`, `name`, `path`, `hasInput`, `hasOutput`)
 
-Non-marker annotations are preserved in operation metadata.
+Non-marker annotations are preserved in procedure metadata and cloned per
+request, so middleware cannot leak state across requests. Service-level
+annotations never propagate to procedures. Handler contexts expose
+`rpcRoute` and `path` alongside `rpcName` and `procedureName`.
 
 ## RPC Annotation Model
 
 This plugin follows the VDL annotation model:
 
-- `@rpc` marks a top-level type as an RPC service.
-- `@proc` marks a field as a request-response operation.
-- `@stream` marks a field as a server-streaming operation.
+- `@httpRpc` marks a top-level type as an HTTP RPC service.
+- `@proc` marks a field as a request-response procedure.
 
 ```vdl
-@rpc
+@httpRpc
 type Messages {
   @proc
   send {
@@ -152,16 +155,6 @@ type Messages {
     }
   }
 
-  @stream
-  events {
-    input {
-      roomId string
-    }
-
-    output {
-      text string
-    }
-  }
 }
 ```
 
@@ -182,21 +175,6 @@ const procOutput = await client.procs.messagesSend().execute({
 });
 
 console.log(procOutput.accepted);
-
-const { stream, cancel } = client.streams.messagesEvents().execute({
-  roomId: "room-1",
-});
-
-for await (const event of stream) {
-  if (!event.ok) {
-    console.error(event.error);
-    break;
-  }
-
-  console.log(event.output.text);
-}
-
-cancel();
 ```
 
 ### Server (Node.js adapter)
@@ -215,13 +193,6 @@ rpcServer.rpcs
   .procs.send()
   .handle(async (_ctx) => {
     return { accepted: true };
-  });
-
-rpcServer.rpcs
-  .messages()
-  .streams.events()
-  .handle(async (ctx, emit) => {
-    await emit(ctx, { text: `joined ${ctx.input.roomId}` });
   });
 
 const handler = createNodeHandler(rpcServer, () => ({ requestId: "req-1" }), {
@@ -246,10 +217,17 @@ export default {
 };
 ```
 
+## Adapter Behavior
+
+- Mount adapters under the RPC base path; segments below the mount point must be `/{rpc}/{procedure}` using the VPP-2 `lowerFirst` transport form.
+- Only `POST` requests route to procedures (anything else gets `405` with an `Allow: POST` header). Paths without exactly two segments get `404`.
+- Unknown procedures keep the standard `ok:false` envelope behavior.
+- See [SECURITY.md](SECURITY.md) for request/response size limits and error privacy guarantees.
+
 ## Important Notes
 
 - `baseURL` in `NewClient(baseURL)` should point to your RPC prefix (for example: `https://api.example.com/rpc`).
-- The generated client appends `/{rpcName}/{operationName}` automatically.
+- The generated client appends `/{lowerFirst(rpcName)}/{procedureName}` automatically following VPP-2.
 - `typesImport` must point to the generated output from `vdl-plugin-ts`.
 - To generate both client and server, run this plugin twice (one block per `target`).
 
